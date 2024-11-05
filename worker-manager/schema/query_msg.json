@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QueryMsg",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "get_next_worker"
+      ],
+      "properties": {
+        "get_next_worker": {
+          "type": "object",
+          "required": [
+            "signature",
+            "subscriber_public_key"
+          ],
+          "properties": {
+            "signature": {
+              "type": "string"
+            },
+            "subscriber_public_key": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "get_liveliness_challenge"
+      ],
+      "properties": {
+        "get_liveliness_challenge": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

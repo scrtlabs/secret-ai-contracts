@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "register_worker"
+      ],
+      "properties": {
+        "register_worker": {
+          "type": "object",
+          "required": [
+            "attestation_report",
+            "ip_address",
+            "payment_wallet",
+            "public_key",
+            "signature"
+          ],
+          "properties": {
+            "attestation_report": {
+              "type": "string"
+            },
+            "ip_address": {
+              "type": "string",
+              "format": "ip"
+            },
+            "payment_wallet": {
+              "type": "string"
+            },
+            "public_key": {
+              "type": "string"
+            },
+            "signature": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "set_worker_wallet"
+      ],
+      "properties": {
+        "set_worker_wallet": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "set_worker_address"
+      ],
+      "properties": {
+        "set_worker_address": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "report_liveliness"
+      ],
+      "properties": {
+        "report_liveliness": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "report_work"
+      ],
+      "properties": {
+        "report_work": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
