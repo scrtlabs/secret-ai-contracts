@@ -1,7 +1,7 @@
 use cosmwasm_std::{
     entry_point, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult
 };
-use secp256k1::{Message, PublicKey, Secp256k1, ecdsa::Signature};
+use secp256k1::{Message, PublicKey, Secp256k1, ecdsa::Signature, SecretKey};
 use sha2::{Digest, Sha256};
 
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, SubscriberStatusResponse};
@@ -194,7 +194,7 @@ fn verify_signature(
 
     secp.verify_ecdsa(&message, &signature, &public_key)
         .map(|_| true)
-        .map_err(|_| StdError::generic_err("Signature verification failed"))
+        .map_err(|_| StdError::generic_err("Invalid signature"))
 }
 
 #[cfg(test)]
@@ -343,5 +343,161 @@ mod tests {
             res.err().unwrap(),
             StdError::generic_err("Only the current admin can set a new admin")
         );
+    }
+
+    #[test]
+    fn query_subscriber_with_valid_signature() {
+        let mut deps = mock_dependencies();
+        let info = mock_info("admin", &[]);
+        let init_msg = InstantiateMsg {};
+        instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
+
+        // Register a subscriber
+        let register_msg = ExecuteMsg::RegisterSubscriber {
+            address: "subscriber1".to_string(),
+        };
+        execute(deps.as_mut(), mock_env(), info, register_msg).unwrap();
+
+        // Generate a valid signature using secp256k1
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&[0x01; 32]).unwrap();
+        let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+
+        let message = format!("{}{}", "subscriber1", "_payload_message");
+        let message_hash = Sha256::digest(message.as_bytes());
+        let message = Message::from_slice(&message_hash).unwrap();
+
+
+        let signature = secp.sign_ecdsa(&message, &secret_key);
+
+        let signature_hex = hex::encode(signature.serialize_der());
+        let public_key_hex = hex::encode(public_key.serialize_uncompressed());
+
+        let query_msg = QueryMsg::SubscriberStatus {
+            address: "subscriber1".to_string(),
+            signature: signature_hex,
+            sender_public_key: public_key_hex,
+        };
+
+        let bin = query(deps.as_ref(), mock_env(), query_msg).unwrap();
+        let response: SubscriberStatusResponse = from_binary(&bin).unwrap();
+
+        // Проверяем, что подписчик активен
+        assert!(response.active);
+    }
+
+    #[test]
+    fn query_subscriber_with_wrong_public_key() {
+        let mut deps = mock_dependencies();
+        let info = mock_info("admin", &[]);
+        let init_msg = InstantiateMsg {};
+        instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
+
+        let register_msg = ExecuteMsg::RegisterSubscriber {
+            address: "subscriber1".to_string(),
+        };
+        execute(deps.as_mut(), mock_env(), info, register_msg).unwrap();
+
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&[0x01; 32]).unwrap();
+        let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+
+        let message = format!("{}{}", "subscriber1", "_payload_message");
+        let message_hash = Sha256::digest(message.as_bytes());
+        let message = Message::from_slice(&message_hash).unwrap();
+
+        let signature = secp.sign_ecdsa(&message, &secret_key);
+
+        let wrong_secret_key = SecretKey::from_slice(&[0x02; 32]).unwrap();
+        let wrong_public_key = secp256k1::PublicKey::from_secret_key(&secp, &wrong_secret_key);
+
+        let signature_hex = hex::encode(signature.serialize_der());
+        let wrong_public_key_hex = hex::encode(wrong_public_key.serialize_uncompressed());
+
+        let query_msg = QueryMsg::SubscriberStatus {
+            address: "subscriber1".to_string(),
+            signature: signature_hex,
+            sender_public_key: wrong_public_key_hex,
+        };
+
+        let result = query(deps.as_ref(), mock_env(), query_msg);
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            StdError::generic_err("Invalid signature")
+        );
+    }
+
+    #[test]
+    fn query_subscriber_with_wrong_signature() {
+        let mut deps = mock_dependencies();
+        let info = mock_info("admin", &[]);
+        let init_msg = InstantiateMsg {};
+        instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
+
+        let register_msg = ExecuteMsg::RegisterSubscriber {
+            address: "subscriber1".to_string(),
+        };
+        execute(deps.as_mut(), mock_env(), info, register_msg).unwrap();
+
+        let secp = Secp256k1::new();
+        let wrong_secret_key = SecretKey::from_slice(&[0x02; 32]).unwrap(); // Используем другой ключ
+        let message = format!("{}{}", "subscriber1", "_payload_message");
+        let message_hash = Sha256::digest(message.as_bytes());
+        let message = Message::from_slice(&message_hash).unwrap();
+        let wrong_signature = secp.sign_ecdsa(&message, &wrong_secret_key);
+
+        let correct_secret_key = SecretKey::from_slice(&[0x01; 32]).unwrap();
+        let correct_public_key = secp256k1::PublicKey::from_secret_key(&secp, &correct_secret_key);
+
+        let wrong_signature_hex = hex::encode(wrong_signature.serialize_der());
+        let correct_public_key_hex = hex::encode(correct_public_key.serialize_uncompressed());
+
+        let query_msg = QueryMsg::SubscriberStatus {
+            address: "subscriber1".to_string(),
+            signature: wrong_signature_hex,
+            sender_public_key: correct_public_key_hex,
+        };
+
+        let result = query(deps.as_ref(), mock_env(), query_msg);
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            StdError::generic_err("Invalid signature")
+        );
+    }
+
+    #[test]
+    fn query_unregistered_subscriber() {
+        let mut deps = mock_dependencies();
+        let info = mock_info("admin", &[]);
+        let init_msg = InstantiateMsg {};
+        instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
+
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&[0x01; 32]).unwrap();
+        let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+
+        let message = format!("{}{}", "unregistered_subscriber", "_payload_message");
+        let message_hash = Sha256::digest(message.as_bytes());
+        let message = Message::from_slice(&message_hash).unwrap();
+        let signature = secp.sign_ecdsa(&message, &secret_key);
+
+        let signature_hex = hex::encode(signature.serialize_der());
+        let public_key_hex = hex::encode(public_key.serialize_uncompressed());
+
+        let query_msg = QueryMsg::SubscriberStatus {
+            address: "unregistered_subscriber".to_string(),
+            signature: signature_hex,
+            sender_public_key: public_key_hex,
+        };
+
+        let bin = query(deps.as_ref(), mock_env(), query_msg).unwrap();
+        let response: SubscriberStatusResponse = from_binary(&bin).unwrap();
+
+        // Ожидаем, что подписчик не активен
+        assert!(!response.active);
     }
 }
