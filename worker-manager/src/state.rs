@@ -1,4 +1,6 @@
+
 use schemars::JsonSchema;
+use secret_toolkit::storage::Keymap;
 use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Addr, Storage};
@@ -9,6 +11,14 @@ pub static CONFIG_KEY: &[u8] = b"config";
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct State {
     pub admin: Addr,
+}
+
+pub static WORKERS_MAP: Keymap<String, Worker> = Keymap::new(b"workers");
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+pub struct Worker {
+    pub ip_address: String,
+    pub payment_wallet: String,
+    pub attestation_report: String,
 }
 
 pub fn config(storage: &mut dyn Storage) -> Singleton<State> {
