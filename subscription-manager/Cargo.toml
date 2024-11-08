@@ -25,23 +25,25 @@ default = []
 backtraces = ["cosmwasm-std/backtraces"]
 
 [dependencies]
-cosmwasm-std = { package = "secret-cosmwasm-std", version = "1.1.11" }
-cosmwasm-storage = { package = "secret-cosmwasm-storage", version = "1.1.11" }
+cosmwasm-std = { package = "secret-cosmwasm-std", version = "1.0.0" }
+cosmwasm-storage = { package = "secret-cosmwasm-storage", version = "1.0.0" }
 secret-toolkit = { version = "0.10.0", default-features = false, features = [
-    "utils",
+#    "utils",
     "storage",
-    "serialization",
-    "viewing-key",
-    "permit",
+#    "serialization",
+#    "viewing-key",
+#    "permit",
 ] }
+getrandom = { version = "0.2.15", features = ["js"]}
 schemars = { version = "0.8.11" }
 serde = { version = "1.0" }
 serde-json-wasm = "1.0.0"
 thiserror = { version = "1.0" }
 cosmwasm-schema = "1.0.0"
-secp256k1 = "0.30.0"
 hex = "0.4.3"
 sha2 = "0.10.8"
+k256 = "0.13.4"
+secp256k1 = "0.30.0"
 
 # Uncomment these for some common extra tools
 # secret-toolkit = { git = "https://github.com/scrtlabs/secret-toolkit", tag = "v0.8.0" }
@@ -53,3 +55,4 @@ sha2 = "0.10.8"
 
 [[bin]]
 name = "schema"
+required-features = ["schema"]
