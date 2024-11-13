@@ -94,7 +94,7 @@ secretcli q compute query <contract_address> '{"get_workers": {"address":"", "si
 To update a worker's wallet:
 
 ```bash
-secretcli tx compute exec <contract_address> '{"set_worker_wallet":{"payment_wallet":"secret1newwallet"}}' --from <your_wallet>
+secretcli tx compute exec <contract_address> '{"set_worker_wallet":{"ip_address":"192.168.1.1", "payment_wallet":"secret1newwallet"}}' --from <your_wallet>
 ```
 ### Set Worker Address
 
