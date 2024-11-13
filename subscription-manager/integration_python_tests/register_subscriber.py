@@ -1,4 +1,5 @@
 import os
+from time import sleep
 
 from dotenv import load_dotenv
 from secret_sdk.client.lcd import LCDClient
@@ -42,3 +43,10 @@ print(t)
 
 assert t.code == 0, f"Transaction failed with code {t.code}: {t.rawlog}"
 print("Transaction successful:", t.txhash)
+
+sleep(5)
+
+tx_info = secret.tx.tx_info(
+    tx_hash=t.txhash,
+)
+print("Transaction info:", tx_info)

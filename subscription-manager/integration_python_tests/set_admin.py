@@ -7,7 +7,6 @@ from secret_sdk.client.localsecret import LocalSecret, main_net_chain_id, test_n
 from secret_sdk.core.coins import Coins
 from secret_sdk.key.mnemonic import MnemonicKey
 from secret_sdk.protobuf.cosmos.tx.v1beta1 import BroadcastMode
-from secret_sdk.util.contract import get_contract_events
 
 load_dotenv()
 chain_id = os.getenv('CHAIN_ID')
@@ -31,14 +30,16 @@ print("wallet_public_key: " + wallet_public_key)
 contract_address = contract
 sent_funds = Coins('100uscrt')
 
-public_key = "subscriber"
-handle_msg = {"remove_subscriber": {"public_key": public_key}}
+public_key = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03"
+handle_msg = {"set_admin": {"public_key": public_key}}
 
 t = wallet.execute_tx(
     contract_addr=contract_address,
     handle_msg=handle_msg,
     transfer_amount=sent_funds,
 )
+
+print(t)
 
 assert t.code == 0, f"Transaction failed with code {t.code}: {t.rawlog}"
 print("Transaction successful:", t.txhash)
