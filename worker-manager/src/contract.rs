@@ -38,12 +38,14 @@ pub fn execute(
             payment_wallet,
             attestation_report,
         } => try_register_worker(deps, info, ip_address, payment_wallet, attestation_report),
-        ExecuteMsg::SetWorkerWallet { ip_address, payment_wallet } => {
-            try_set_worker_wallet(deps, info, ip_address, payment_wallet)
-        }
-        ExecuteMsg::SetWorkerAddress { new_ip_address, old_ip_address } => {
-            try_set_worker_address(deps, info, new_ip_address, old_ip_address)
-        }
+        ExecuteMsg::SetWorkerWallet {
+            ip_address,
+            payment_wallet,
+        } => try_set_worker_wallet(deps, info, ip_address, payment_wallet),
+        ExecuteMsg::SetWorkerAddress {
+            new_ip_address,
+            old_ip_address,
+        } => try_set_worker_address(deps, info, new_ip_address, old_ip_address),
         ExecuteMsg::ReportLiveliness {} => try_report_liveliness(deps, info),
         ExecuteMsg::ReportWork {} => try_report_work(deps, info),
     }
@@ -56,7 +58,6 @@ pub fn try_register_worker(
     payment_wallet: String,
     attestation_report: String,
 ) -> StdResult<Response> {
-
     let worker = Worker {
         ip_address,
         payment_wallet,
@@ -77,7 +78,9 @@ pub fn try_set_worker_wallet(
     let worker_entry = WORKERS_MAP.get(_deps.storage, &ip_address);
     if let Some(worker) = worker_entry {
         if _info.sender != worker.payment_wallet {
-            return Err(StdError::generic_err("Only the owner has the authority to modify the payment wallet"));
+            return Err(StdError::generic_err(
+                "Only the owner has the authority to modify the payment wallet",
+            ));
         }
         let worker = Worker {
             payment_wallet,
@@ -101,7 +104,9 @@ pub fn try_set_worker_address(
     let worker_entry = WORKERS_MAP.get(_deps.storage, &old_ip_address);
     if let Some(worker) = worker_entry {
         if _info.sender != worker.payment_wallet {
-            return Err(StdError::generic_err("Only the owner has the authority to modify the IP address"));
+            return Err(StdError::generic_err(
+                "Only the owner has the authority to modify the IP address",
+            ));
         }
         let worker = Worker {
             payment_wallet: worker.payment_wallet,
@@ -149,7 +154,6 @@ fn query_workers(
     _signature: String,
     _sender_public_key: String,
 ) -> StdResult<GetWorkersResponse> {
-
     let workers: Vec<_> = WORKERS_MAP
         .iter(_deps.storage)?
         .map(|x| {
@@ -172,9 +176,14 @@ fn query_liveliness_challenge(_deps: Deps) -> StdResult<GetLivelinessChallengeRe
 
 #[cfg(test)]
 mod tests {
+    use crate::msg;
+
     use super::*;
-    use cosmwasm_std::{from_binary, testing::*};
+    use cosmwasm_std::{from_binary, testing::*, OwnedDeps};
     use cosmwasm_std::{Coin, Uint128};
+    const IP_ADDRESS: &str = "127.0.0.1";
+    const PAYMENT_WALLET: &str = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03";
+    const ATTESTATION_REPORT: &str = "";
 
     #[test]
     fn proper_initialization() {
@@ -194,97 +203,161 @@ mod tests {
         assert_eq!(0, res.messages.len());
     }
 
-    #[test]
-    fn register_worker_success() {
+    fn init_contract() -> (
+        StdResult<Response>,
+        OwnedDeps<MockStorage, MockApi, MockQuerier>,
+    ) {
         let mut deps = mock_dependencies();
         let env = mock_env();
         let info = mock_info("admin", &[]);
         let msg = InstantiateMsg {};
-        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
 
+        (res, deps)
+    }
+
+    fn register_worker(
+        deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
+        ip_address: String,
+        payment_wallet: String,
+        attestation_report: String,
+    ) -> StdResult<Response> {
         let execute_msg = ExecuteMsg::RegisterWorker {
-            ip_address: String::from("127.0.0.1"),
-            payment_wallet: "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03".to_string(),
-            attestation_report: "".to_string(),
+            ip_address,
+            payment_wallet: payment_wallet.clone(),
+            attestation_report,
         };
-        let res = execute(deps.as_mut(), env, info, execute_msg).unwrap();
-        assert_eq!(0, res.messages.len());
+        execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(&payment_wallet, &[]),
+            execute_msg,
+        )
+    }
+
+    #[test]
+    fn register_worker_success() {
+        let (res, mut deps) = init_contract();
+        assert_eq!(res.unwrap().messages.len(), 0);
+
+        let res = register_worker(
+            &mut deps,
+            IP_ADDRESS.into(),
+            PAYMENT_WALLET.into(),
+            ATTESTATION_REPORT.into(),
+        )
+        .unwrap();
+
         let worker: Worker = from_binary(&res.data.unwrap()).unwrap();
         assert_eq!(
             worker,
             Worker {
-                ip_address: String::from("127.0.0.1"),
-                payment_wallet: "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03".to_string(),
-                attestation_report: "".to_string(),
+                ip_address: IP_ADDRESS.into(),
+                payment_wallet: PAYMENT_WALLET.into(),
+                attestation_report: ATTESTATION_REPORT.into(),
             }
         );
     }
 
     #[test]
     fn set_worker_wallet() {
-        let mut deps = mock_dependencies();
-        let env = mock_env();
-        let info = mock_info("secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03", &[]);
-        let msg = InstantiateMsg {};
-        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        let (res, mut deps) = init_contract();
+        assert_eq!(res.unwrap().messages.len(), 0);
 
-        let ip_address = String::from("127.0.0.1");
-        let payment_wallet = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03".to_string();
-        let attestation_report = "".to_string();
-
-        let execute_msg = ExecuteMsg::RegisterWorker {
-            ip_address: ip_address.clone(),
-            payment_wallet,
-            attestation_report: attestation_report.clone(),
-        };
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg).unwrap();
+        let res = register_worker(
+            &mut deps,
+            IP_ADDRESS.into(),
+            PAYMENT_WALLET.into(),
+            ATTESTATION_REPORT.into(),
+        )
+        .unwrap();
         assert_eq!(0, res.messages.len());
 
         let new_payment_wallet = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450007".to_string();
         let execute_msg = ExecuteMsg::SetWorkerWallet {
-            ip_address: ip_address.clone(),
+            ip_address: IP_ADDRESS.into(),
             payment_wallet: new_payment_wallet.clone(),
         };
-        let res = execute(deps.as_mut(), env, info, execute_msg).unwrap();
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(PAYMENT_WALLET, &[]),
+            execute_msg,
+        )
+        .unwrap();
         assert_eq!(0, res.messages.len());
 
         let worker: Worker = from_binary(&res.data.unwrap()).unwrap();
         assert_eq!(
             worker,
             Worker {
-                ip_address: ip_address.clone(),
+                ip_address: IP_ADDRESS.into(),
                 payment_wallet: new_payment_wallet,
-                attestation_report,
+                attestation_report: ATTESTATION_REPORT.into(),
             }
         );
     }
 
     #[test]
-    fn set_worker_address() {
-        let mut deps = mock_dependencies();
-        let env = mock_env();
-        let info = mock_info("secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03", &[]);
-        let msg = InstantiateMsg {};
-        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+    fn set_worker_wallet_unauthorized() {
+        let (res, mut deps) = init_contract();
+        assert_eq!(res.unwrap().messages.len(), 0);
 
-        let ip_address = String::from("127.0.0.1");
-        let payment_wallet = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03".to_string();
-        let attestation_report = "".to_string();
+        let res = register_worker(
+            &mut deps,
+            IP_ADDRESS.into(),
+            PAYMENT_WALLET.into(),
+            ATTESTATION_REPORT.into(),
+        )
+        .unwrap();
+        assert_eq!(0, res.messages.len());
 
-        let execute_msg = ExecuteMsg::RegisterWorker {
-            ip_address: ip_address.clone(),
-            payment_wallet: payment_wallet.clone(),
-            attestation_report: attestation_report.clone(),
+        let new_payment_wallet = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450007".to_string();
+        let execute_msg = ExecuteMsg::SetWorkerWallet {
+            ip_address: IP_ADDRESS.into(),
+            payment_wallet: new_payment_wallet.clone(),
         };
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg).unwrap();
+
+        // set as sender foreign wallet
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(&new_payment_wallet, &[]),
+            execute_msg,
+        );
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            StdError::generic_err("Only the owner has the authority to modify the payment wallet",)
+        );
+    }
+
+    #[test]
+    fn set_worker_address() {
+        let (res, mut deps) = init_contract();
+        assert_eq!(res.unwrap().messages.len(), 0);
+
+        let res = register_worker(
+            &mut deps,
+            IP_ADDRESS.into(),
+            PAYMENT_WALLET.into(),
+            ATTESTATION_REPORT.into(),
+        )
+        .unwrap();
         assert_eq!(0, res.messages.len());
 
         let new_ip_address = String::from("147.4.4.7");
         let execute_msg = ExecuteMsg::SetWorkerAddress {
             new_ip_address: new_ip_address.clone(),
-            old_ip_address: ip_address.clone(),
+            old_ip_address: IP_ADDRESS.into(),
         };
-        let res = execute(deps.as_mut(), env, info, execute_msg).unwrap();
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(PAYMENT_WALLET, &[]),
+            execute_msg,
+        )
+        .unwrap();
         assert_eq!(0, res.messages.len());
 
         let worker: Worker = from_binary(&res.data.unwrap()).unwrap();
@@ -292,19 +365,48 @@ mod tests {
             worker,
             Worker {
                 ip_address: new_ip_address,
-                payment_wallet,
-                attestation_report,
+                payment_wallet: PAYMENT_WALLET.into(),
+                attestation_report: ATTESTATION_REPORT.into(),
             }
         );
     }
 
     #[test]
+    fn set_worker_address_unauthorized() {
+        let (res, mut deps) = init_contract();
+        assert_eq!(res.unwrap().messages.len(), 0);
+
+        let res = register_worker(
+            &mut deps,
+            IP_ADDRESS.into(),
+            PAYMENT_WALLET.into(),
+            ATTESTATION_REPORT.into(),
+        )
+        .unwrap();
+        assert_eq!(0, res.messages.len());
+
+        let new_ip_address = String::from("147.4.4.7");
+        let execute_msg = ExecuteMsg::SetWorkerAddress {
+            new_ip_address: new_ip_address.clone(),
+            old_ip_address: IP_ADDRESS.into(),
+        };
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info("fake_acc", &[]),
+            execute_msg,
+        );
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            StdError::generic_err("Only the owner has the authority to modify the IP address",)
+        );
+    }
+
+    #[test]
     fn query_workers() {
-        let mut deps = mock_dependencies();
-        let env = mock_env();
-        let info = mock_info("secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03", &[]);
-        let msg = InstantiateMsg {};
-        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        let (res, mut deps) = init_contract();
+        assert_eq!(res.unwrap().messages.len(), 0);
 
         let ip_address_1 = String::from("127.0.0.1");
         let ip_address_2 = String::from("127.0.0.2");
@@ -314,28 +416,31 @@ mod tests {
         let payment_wallet_2 = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s07".to_string();
         let attestation_report = "".to_string();
 
-        let execute_msg = ExecuteMsg::RegisterWorker {
-            ip_address: ip_address_1.clone(),
-            payment_wallet: payment_wallet_1.clone(),
-            attestation_report: attestation_report.clone(),
-        };
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg).unwrap();
+        let res = register_worker(
+            &mut deps,
+            ip_address_1.clone(),
+            payment_wallet_1.clone(),
+            ATTESTATION_REPORT.into(),
+        )
+        .unwrap();
         assert_eq!(0, res.messages.len());
 
-        let execute_msg = ExecuteMsg::RegisterWorker {
-            ip_address: ip_address_2.clone(),
-            payment_wallet: payment_wallet_1.clone(),
-            attestation_report: attestation_report.clone(),
-        };
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg).unwrap();
+        let res = register_worker(
+            &mut deps,
+            ip_address_2.clone(),
+            payment_wallet_1.clone(),
+            ATTESTATION_REPORT.into(),
+        )
+        .unwrap();
         assert_eq!(0, res.messages.len());
 
-        let execute_msg = ExecuteMsg::RegisterWorker {
-            ip_address: ip_address_3.clone(),
-            payment_wallet: payment_wallet_2.clone(),
-            attestation_report: attestation_report.clone(),
-        };
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg).unwrap();
+        let res = register_worker(
+            &mut deps,
+            ip_address_3.clone(),
+            payment_wallet_2.clone(),
+            ATTESTATION_REPORT.into(),
+        )
+        .unwrap();
         assert_eq!(0, res.messages.len());
 
         let query_msg = QueryMsg::GetWorkers {
@@ -343,7 +448,7 @@ mod tests {
             signature: "".to_string(),
             subscriber_public_key: "".to_string(),
         };
-        let res = query(deps.as_ref(), env, query_msg).unwrap();
+        let res = query(deps.as_ref(), mock_env(), query_msg).unwrap();
 
         let workers: GetWorkersResponse = from_binary(&res).unwrap();
         assert_eq!(
