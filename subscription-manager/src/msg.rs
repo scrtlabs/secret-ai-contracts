@@ -19,6 +19,13 @@ pub enum ExecuteMsg {
     SetAdmin { public_key: String },
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MigrateMsg {
+    Migrate {},
+    StdError {},
+}
+
 // Enum representing the different query messages that the contract can respond to
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]

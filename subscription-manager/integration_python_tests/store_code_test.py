@@ -4,11 +4,32 @@ from secret_sdk.key.mnemonic import MnemonicKey
 from secret_sdk.core import Coins, TxResultCode
 from secret_sdk.client.lcd.api.gov import ProposalStatus
 from secret_sdk.core.wasm.msgs import MsgStoreCode, MsgInstantiateContract, MsgExecuteContract
+from secret_sdk.protobuf import secret
 from secret_sdk.util.tx import get_value_from_raw_log
 from secret_sdk.protobuf.cosmos.tx.v1beta1 import BroadcastMode
 
+@pytest.fixture
+def mnemonics():
+    # Initialize genesis accounts
+    return [
+        "grant rice replace explain federal release fix clever romance raise often wild taxi quarter soccer fiber love must tape steak together observe swap guitar",
+        "jelly shadow frog dirt dragon use armed praise universe win jungle close inmate rain oil canvas beauty pioneer chef soccer icon dizzy thunder meadow",
+        "chair love bleak wonder skirt permit say assist aunt credit roast size obtain minute throw sand usual age smart exact enough room shadow charge",
+        "word twist toast cloth movie predict advance crumble escape whale sail such angry muffin balcony keen move employ cook valve hurt glimpse breeze brick",
+    ]
 
 def test_store_code():
+    accounts = []
+
+    for mnemonic in mnemonics:
+        wallet = secret.wallet(MnemonicKey(mnemonic))
+        accounts.append({
+          'address': wallet.key.acc_address,
+          'mnemonic': mnemonic,
+          'wallet': wallet,
+          'secret': secret
+        })
+
     wallet = pytest.accounts[0]['wallet']
 
     with open(r'tests/data/snip20-ibc.wasm.gz', 'rb') as fl:

@@ -2,7 +2,7 @@ use cosmwasm_std::{
     entry_point, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult
 };
 use sha2::{Digest, Sha256};
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, SubscriberStatusResponse};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatusResponse};
 use crate::state::{config, config_read, State, Subscriber, SB_MAP};
 
 // Entry point for contract initialization
@@ -43,6 +43,14 @@ pub fn execute(
         ExecuteMsg::RemoveSubscriber { public_key } => try_remove_subscriber(deps, info, public_key),
         // Handle setting a new admin
         ExecuteMsg::SetAdmin { public_key } => try_set_admin(deps, info, public_key),
+    }
+}
+
+#[entry_point]
+pub fn migrate(_deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response> {
+    match msg {
+        MigrateMsg::Migrate {} => Ok(Response::default()),
+        MigrateMsg::StdError {} => Err(StdError::generic_err("this is an std error")),
     }
 }
 

@@ -14,7 +14,7 @@
     "@solar-republic/neutrino": "^1.0.8",
     "dotenv": "^16.4.5",
     "ethers": "^6.13.4",
-    "secretjs": "^1.15.0-beta.0",
+    "secretjs": "^1.15.0-beta.1",
     "secure-random": "^1.1.2"
   }
 }
