@@ -1,11 +1,16 @@
+use crate::msg::{
+    ExecuteMsg, GetLivelinessChallengeResponse, GetWorkersResponse, InstantiateMsg, MigrateMsg,
+    QueryMsg, SubscriberStatus, SubscriberStatusQuery, SubscriberStatusResponse,
+};
+use crate::state::{config, State, Worker, WORKERS_MAP};
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
 };
+use sha2::{Digest, Sha256};
 
-use crate::msg::{
-    ExecuteMsg, GetLivelinessChallengeResponse, GetWorkersResponse, InstantiateMsg, QueryMsg,
-};
-use crate::state::{config, State, Worker, WORKERS_MAP};
+const SUBSCRIBER_CONTRACT_ADDRESS: &str = "secret1ttm9axv8hqwjv3qxvxseecppsrw4cd68getrvr";
+const SUBSCRIBER_CONTRACT_CODE_HASH: &str =
+    "c67de4cbe83764424192372e39abc0e040150d890600adefd6358abb6f0165ae";
 
 #[entry_point]
 pub fn instantiate(
@@ -135,38 +140,88 @@ pub fn try_report_work(_deps: DepsMut, _info: MessageInfo) -> StdResult<Response
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::GetWorkers {
-            address,
             signature,
             subscriber_public_key,
-        } => to_binary(&query_workers(
-            deps,
-            address,
-            signature,
-            subscriber_public_key,
-        )?),
+        } => to_binary(&query_workers(deps, signature, subscriber_public_key)?),
         QueryMsg::GetLivelinessChallenge {} => to_binary(&query_liveliness_challenge(deps)?),
+    }
+}
+
+#[entry_point]
+pub fn migrate(_deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response> {
+    match msg {
+        MigrateMsg::Migrate {} => Ok(Response::default()),
+        MigrateMsg::StdError {} => Err(StdError::generic_err("this is an std error")),
     }
 }
 
 fn query_workers(
     _deps: Deps,
-    _address: String,
     _signature: String,
     _sender_public_key: String,
 ) -> StdResult<GetWorkersResponse> {
-    let workers: Vec<_> = WORKERS_MAP
-        .iter(_deps.storage)?
-        .map(|x| {
-            if let Ok((_, worker)) = x {
-                Some(worker)
-            } else {
-                None
-            }
-        })
-        .filter_map(|x| x)
-        .collect();
+    let public_key_hex = _sender_public_key.clone();
+    let signature_hex = _signature.clone();
 
-    Ok(GetWorkersResponse { workers })
+    let public_key_bytes = hex::decode(public_key_hex.clone())
+        .map_err(|_| StdError::generic_err("Invalid public key hex"))?;
+
+    let signature_bytes =
+        hex::decode(signature_hex).map_err(|_| StdError::generic_err("Invalid signature hex"))?;
+
+    let message_hash = Sha256::digest(public_key_bytes.clone());
+
+    let verify = _deps
+        .api
+        .secp256k1_verify(&message_hash, &signature_bytes, &public_key_bytes)
+        .map_err(|e| {
+            StdError::generic_err("Failed to verify signature: ".to_string() + &e.to_string())
+        })?;
+
+    if !verify {
+        return Err(StdError::generic_err("Signature verification failed"));
+    }
+
+    let subs = SubscriberStatusQuery {
+        subscriber_status: SubscriberStatus {
+            public_key: _sender_public_key,
+        },
+    };
+
+    let query_msg = to_binary(&subs)?;
+
+    let res: Result<SubscriberStatusResponse, StdError> = _deps.querier.query(
+        &cosmwasm_std::QueryRequest::Wasm(cosmwasm_std::WasmQuery::Smart {
+            contract_addr: SUBSCRIBER_CONTRACT_ADDRESS.into(),
+            code_hash: SUBSCRIBER_CONTRACT_CODE_HASH.into(),
+            msg: query_msg,
+        }),
+    );
+
+    match res {
+        Ok(subscriber_status) => {
+            if subscriber_status.active {
+                let workers: Vec<_> = WORKERS_MAP
+                    .iter(_deps.storage)?
+                    .map(|x| {
+                        if let Ok((_, worker)) = x {
+                            Some(worker)
+                        } else {
+                            None
+                        }
+                    })
+                    .filter_map(|x| x)
+                    .collect();
+
+                Ok(GetWorkersResponse { workers })
+            } else {
+                Err(StdError::generic_err("Subscriber isn't active"))
+            }
+        }
+        Err(err) => Err(StdError::generic_err(
+            "Failed to deserialize subscriber response: ".to_string() + &err.to_string(),
+        )),
+    }
 }
 
 fn query_liveliness_challenge(_deps: Deps) -> StdResult<GetLivelinessChallengeResponse> {
@@ -176,11 +231,11 @@ fn query_liveliness_challenge(_deps: Deps) -> StdResult<GetLivelinessChallengeRe
 
 #[cfg(test)]
 mod tests {
-    use crate::msg;
 
     use super::*;
-    use cosmwasm_std::{from_binary, testing::*, OwnedDeps};
+    use cosmwasm_std::{from_binary, testing::*, Api, OwnedDeps};
     use cosmwasm_std::{Coin, Uint128};
+    use hex::ToHex;
     const IP_ADDRESS: &str = "127.0.0.1";
     const PAYMENT_WALLET: &str = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03";
     const ATTESTATION_REPORT: &str = "";
@@ -414,7 +469,6 @@ mod tests {
 
         let payment_wallet_1 = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03".to_string();
         let payment_wallet_2 = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s07".to_string();
-        let attestation_report = "".to_string();
 
         let res = register_worker(
             &mut deps,
@@ -443,35 +497,22 @@ mod tests {
         .unwrap();
         assert_eq!(0, res.messages.len());
 
-        let query_msg = QueryMsg::GetWorkers {
-            address: "".to_string(),
-            signature: "".to_string(),
-            subscriber_public_key: "".to_string(),
-        };
-        let res = query(deps.as_ref(), mock_env(), query_msg).unwrap();
+        let message =
+            hex::decode("034ee8249f67e136139c3ed94ad63288f6c1de45ce66fa883247211a698f440cdf")
+                .unwrap();
+        let priv_key =
+            hex::decode("f0a7b67eb9a719d54f8a9bfbfb187d8c296b97911a05bf5ca30494823e46beb6")
+                .unwrap();
 
-        let workers: GetWorkersResponse = from_binary(&res).unwrap();
-        assert_eq!(
-            workers,
-            GetWorkersResponse {
-                workers: vec![
-                    Worker {
-                        ip_address: ip_address_1,
-                        payment_wallet: payment_wallet_1.clone(),
-                        attestation_report: attestation_report.clone(),
-                    },
-                    Worker {
-                        ip_address: ip_address_2,
-                        payment_wallet: payment_wallet_1.clone(),
-                        attestation_report: attestation_report.clone(),
-                    },
-                    Worker {
-                        ip_address: ip_address_3,
-                        payment_wallet: payment_wallet_2,
-                        attestation_report,
-                    },
-                ]
-            }
-        );
+        let sign = deps.api.secp256k1_sign(&message, &priv_key).unwrap();
+
+        let query_msg = QueryMsg::GetWorkers {
+            signature: sign.encode_hex(),
+            subscriber_public_key:
+                "034ee8249f67e136139c3ed94ad63288f6c1de45ce66fa883247211a698f440cdf".to_string(),
+        };
+        let res = query(deps.as_ref(), mock_env(), query_msg);
+
+        assert!(res.is_err());
     }
 }

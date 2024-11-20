@@ -34,6 +34,8 @@ schemars = { version = "0.8.11" }
 serde = { version = "1.0" }
 thiserror = { version = "1.0" }
 cosmwasm-schema = "1.0.0"
+sha2 = "0.10.8"
+hex = "0.4.3"
 
 # Uncomment these for some common extra tools
 # secret-toolkit = { git = "https://github.com/scrtlabs/secret-toolkit", tag = "v0.8.0" }

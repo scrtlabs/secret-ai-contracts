@@ -30,7 +30,6 @@ pub enum ExecuteMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     GetWorkers {
-        address: String,
         signature: String,
         subscriber_public_key: String,
     },
@@ -45,3 +44,28 @@ pub struct GetWorkersResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct GetLivelinessChallengeResponse {}
+
+// We define a custom struct for each query response
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+pub struct SubscriberStatusResponse {
+    pub active: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct SubscriberStatusQuery {
+    pub subscriber_status: SubscriberStatus,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct SubscriberStatus {
+    pub public_key: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MigrateMsg {
+    Migrate {},
+    StdError {},
+}

@@ -86,7 +86,44 @@ secretcli tx compute exec <contract_address> '{"register_worker":{"ip_address":"
 To query all workers, execute the `GetWorkers` query:
 
 ```bash
-secretcli q compute query <contract_address> '{"get_workers": {"address":"", "signature":"", "subscriber_public_key":""}}' 
+secretcli q compute query <contract_address> '{"get_workers": {"signature":<signed_msg_hex>, "subscriber_public_key":<pub_key_hex>}}' 
+```
+
+This Python example demonstrates signing a message with your private key and verifying it using the Secret SDK and secp256k1.
+
+```python
+from secret_sdk.client.lcd import LCDClient
+from secret_sdk.key.mnemonic import MnemonicKey
+import secp256k1
+
+chain_id = 'pulsar-3'
+node_url = 'https://api.pulsar.scrttestnet.com'
+mnemonic = 'grant rice replace explain federal release fix clever romance raise often wild taxi quarter soccer fiber love must tape steak together observe swap guitar'
+
+mk = MnemonicKey(mnemonic=mnemonic)
+secret = LCDClient(chain_id=chain_id, url=node_url)
+wallet = secret.wallet(mk)
+
+private_key_secp = secp256k1.PrivateKey(bytes.fromhex(mk.private_key.hex()))
+message = bytes.fromhex(mk.public_key.key.hex())
+
+signature = private_key_secp.ecdsa_sign(message)
+signature_der = private_key_secp.ecdsa_serialize_compact(signature)
+
+print("signature: ", signature_der.hex())
+
+sig = private_key_secp.ecdsa_deserialize_compact(signature_der)
+
+is_valid = private_key_secp.pubkey.ecdsa_verify(message, sig)
+print("is_valid: ", is_valid)
+```
+
+Expected output:
+
+```bash
+pubkey:  034ee8249f67e136139c3ed94ad63288f6c1de45ce66fa883247211a698f440cdf
+signature:  164a70762475db7f55b2fa2932ac35f761e27628ca13e9b8512137e256d93ea027ebcbb6725f23b3f720a4e00d5e57cbdc60c785437d943c62efba2bc5f61d85
+is_valid:  True
 ```
 
 ### Set Worker Wallet
@@ -106,5 +143,4 @@ secretcli tx compute exec <contract_address> '{"set_worker_address": {"new_ip_ad
 
 ### Notes 
 
-- Currently, the contract does not verify signed messages in queries or check the attestation report for simplicity. These features will be added soon.
 - Liveliness reporting and work reporting are placeholder features and have not been implemented yet.

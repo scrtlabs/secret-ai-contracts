@@ -14,7 +14,7 @@ print("contract: " + contract)
 
 secret = LCDClient(chain_id=chain_id, url=node_url)
 
-query = {"get_workers": {"address": "", "signature": "", "subscriber_public_key": ""}}
+query = {"get_workers": {"signature": "", "subscriber_public_key": ""}}
 
 result = secret.wasm.contract_query(contract, query)
 
