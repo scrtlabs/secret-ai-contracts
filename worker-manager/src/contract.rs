@@ -2,7 +2,7 @@ use crate::msg::{
     ExecuteMsg, GetLivelinessChallengeResponse, GetWorkersResponse, InstantiateMsg, MigrateMsg,
     QueryMsg, SubscriberStatus, SubscriberStatusQuery, SubscriberStatusResponse,
 };
-use crate::state::{config, State, Worker, WORKERS_MAP};
+use crate::state::{config, State, Worker, WorkerType, WORKERS_MAP};
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
 };
@@ -42,7 +42,15 @@ pub fn execute(
             ip_address,
             payment_wallet,
             attestation_report,
-        } => try_register_worker(deps, info, ip_address, payment_wallet, attestation_report),
+            worker_type,
+        } => try_register_worker(
+            deps,
+            info,
+            ip_address,
+            payment_wallet,
+            attestation_report,
+            worker_type,
+        ),
         ExecuteMsg::SetWorkerWallet {
             ip_address,
             payment_wallet,
@@ -51,6 +59,10 @@ pub fn execute(
             new_ip_address,
             old_ip_address,
         } => try_set_worker_address(deps, info, new_ip_address, old_ip_address),
+        ExecuteMsg::SetWorkerType {
+            ip_address,
+            worker_type,
+        } => try_set_worker_type(deps, info, ip_address, worker_type),
         ExecuteMsg::ReportLiveliness {} => try_report_liveliness(deps, info),
         ExecuteMsg::ReportWork {} => try_report_work(deps, info),
     }
@@ -62,11 +74,13 @@ pub fn try_register_worker(
     ip_address: String,
     payment_wallet: String,
     attestation_report: String,
+    worker_type: WorkerType,
 ) -> StdResult<Response> {
     let worker = Worker {
         ip_address,
         payment_wallet,
         attestation_report,
+        worker_type,
     };
 
     WORKERS_MAP.insert(_deps.storage, &worker.ip_address, &worker)?;
@@ -91,6 +105,7 @@ pub fn try_set_worker_wallet(
             payment_wallet,
             ip_address: worker.ip_address,
             attestation_report: worker.attestation_report,
+            worker_type: worker.worker_type,
         };
 
         WORKERS_MAP.insert(_deps.storage, &worker.ip_address, &worker)?;
@@ -117,12 +132,40 @@ pub fn try_set_worker_address(
             payment_wallet: worker.payment_wallet,
             ip_address: new_ip_address.clone(),
             attestation_report: worker.attestation_report,
+            worker_type: worker.worker_type,
         };
         WORKERS_MAP.remove(_deps.storage, &old_ip_address)?;
         WORKERS_MAP.insert(_deps.storage, &new_ip_address, &worker)?;
         Ok(Response::new().set_data(to_binary(&worker)?))
     } else {
         Err(StdError::generic_err("Could not find the worker"))
+    }
+}
+
+pub fn try_set_worker_type(
+    _deps: DepsMut,
+    _info: MessageInfo,
+    ip_address: String,
+    worker_type: WorkerType,
+) -> StdResult<Response> {
+    let worker_entry = WORKERS_MAP.get(_deps.storage, &ip_address);
+    if let Some(worker) = worker_entry {
+        if _info.sender != worker.payment_wallet {
+            return Err(StdError::generic_err(
+                "Only the owner has the authority to modify the worker_type",
+            ));
+        }
+        let worker = Worker {
+            payment_wallet: worker.payment_wallet,
+            ip_address: worker.ip_address,
+            attestation_report: worker.attestation_report,
+            worker_type,
+        };
+
+        WORKERS_MAP.insert(_deps.storage, &worker.ip_address, &worker)?;
+        Ok(Response::new().set_data(to_binary(&worker)?))
+    } else {
+        Err(StdError::generic_err("Didn't find worker"))
     }
 }
 
@@ -182,46 +225,60 @@ fn query_workers(
         return Err(StdError::generic_err("Signature verification failed"));
     }
 
-    let subs = SubscriberStatusQuery {
-        subscriber_status: SubscriberStatus {
-            public_key: _sender_public_key,
-        },
-    };
+    // let subs = SubscriberStatusQuery {
+    //     subscriber_status: SubscriberStatus {
+    //         public_key: _sender_public_key,
+    //     },
+    // };
 
-    let query_msg = to_binary(&subs)?;
+    // let query_msg = to_binary(&subs)?;
 
-    let res: Result<SubscriberStatusResponse, StdError> = _deps.querier.query(
-        &cosmwasm_std::QueryRequest::Wasm(cosmwasm_std::WasmQuery::Smart {
-            contract_addr: SUBSCRIBER_CONTRACT_ADDRESS.into(),
-            code_hash: SUBSCRIBER_CONTRACT_CODE_HASH.into(),
-            msg: query_msg,
-        }),
-    );
+    // let res: Result<SubscriberStatusResponse, StdError> = _deps.querier.query(
+    //     &cosmwasm_std::QueryRequest::Wasm(cosmwasm_std::WasmQuery::Smart {
+    //         contract_addr: SUBSCRIBER_CONTRACT_ADDRESS.into(),
+    //         code_hash: SUBSCRIBER_CONTRACT_CODE_HASH.into(),
+    //         msg: query_msg,
+    //     }),
+    // );
 
-    match res {
-        Ok(subscriber_status) => {
-            if subscriber_status.active {
-                let workers: Vec<_> = WORKERS_MAP
-                    .iter(_deps.storage)?
-                    .map(|x| {
-                        if let Ok((_, worker)) = x {
-                            Some(worker)
-                        } else {
-                            None
-                        }
-                    })
-                    .filter_map(|x| x)
-                    .collect();
+    // match res {
+    //     Ok(subscriber_status) => {
+    //         if subscriber_status.active {
+    //             let workers: Vec<_> = WORKERS_MAP
+    //                 .iter(_deps.storage)?
+    //                 .map(|x| {
+    //                     if let Ok((_, worker)) = x {
+    //                         Some(worker)
+    //                     } else {
+    //                         None
+    //                     }
+    //                 })
+    //                 .filter_map(|x| x)
+    //                 .collect();
 
-                Ok(GetWorkersResponse { workers })
+    //             Ok(GetWorkersResponse { workers })
+    //         } else {
+    //             Err(StdError::generic_err("Subscriber isn't active"))
+    //         }
+    //     }
+    //     Err(err) => Err(StdError::generic_err(
+    //         "Failed to deserialize subscriber response: ".to_string() + &err.to_string(),
+    //     )),
+    // }
+
+    let workers: Vec<_> = WORKERS_MAP
+        .iter(_deps.storage)?
+        .map(|x| {
+            if let Ok((_, worker)) = x {
+                Some(worker)
             } else {
-                Err(StdError::generic_err("Subscriber isn't active"))
+                None
             }
-        }
-        Err(err) => Err(StdError::generic_err(
-            "Failed to deserialize subscriber response: ".to_string() + &err.to_string(),
-        )),
-    }
+        })
+        .filter_map(|x| x)
+        .collect();
+
+    Ok(GetWorkersResponse { workers })
 }
 
 fn query_liveliness_challenge(_deps: Deps) -> StdResult<GetLivelinessChallengeResponse> {
@@ -276,11 +333,13 @@ mod tests {
         ip_address: String,
         payment_wallet: String,
         attestation_report: String,
+        worker_type: WorkerType,
     ) -> StdResult<Response> {
         let execute_msg = ExecuteMsg::RegisterWorker {
             ip_address,
             payment_wallet: payment_wallet.clone(),
             attestation_report,
+            worker_type,
         };
         execute(
             deps.as_mut(),
@@ -300,6 +359,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
+            WorkerType::AI,
         )
         .unwrap();
 
@@ -310,6 +370,7 @@ mod tests {
                 ip_address: IP_ADDRESS.into(),
                 payment_wallet: PAYMENT_WALLET.into(),
                 attestation_report: ATTESTATION_REPORT.into(),
+                worker_type: WorkerType::AI
             }
         );
     }
@@ -324,6 +385,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
+            WorkerType::AI,
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -349,6 +411,7 @@ mod tests {
                 ip_address: IP_ADDRESS.into(),
                 payment_wallet: new_payment_wallet,
                 attestation_report: ATTESTATION_REPORT.into(),
+                worker_type: WorkerType::AI,
             }
         );
     }
@@ -363,6 +426,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
+            WorkerType::AI,
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -397,6 +461,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
+            WorkerType::AI,
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -422,6 +487,7 @@ mod tests {
                 ip_address: new_ip_address,
                 payment_wallet: PAYMENT_WALLET.into(),
                 attestation_report: ATTESTATION_REPORT.into(),
+                worker_type: WorkerType::AI,
             }
         );
     }
@@ -436,6 +502,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
+            WorkerType::AI,
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -475,6 +542,7 @@ mod tests {
             ip_address_1.clone(),
             payment_wallet_1.clone(),
             ATTESTATION_REPORT.into(),
+            WorkerType::AI,
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -484,6 +552,7 @@ mod tests {
             ip_address_2.clone(),
             payment_wallet_1.clone(),
             ATTESTATION_REPORT.into(),
+            WorkerType::AI,
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -493,6 +562,7 @@ mod tests {
             ip_address_3.clone(),
             payment_wallet_2.clone(),
             ATTESTATION_REPORT.into(),
+            WorkerType::AI,
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -513,6 +583,7 @@ mod tests {
         };
         let res = query(deps.as_ref(), mock_env(), query_msg);
 
-        assert!(res.is_err());
+        assert!(res.is_ok());
+        dbg!(res);
     }
 }

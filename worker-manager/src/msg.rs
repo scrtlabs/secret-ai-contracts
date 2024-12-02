@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::Worker;
+use crate::state::{Worker, WorkerType};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {}
@@ -13,6 +13,7 @@ pub enum ExecuteMsg {
         ip_address: String,
         payment_wallet: String,
         attestation_report: String,
+        worker_type: WorkerType,
     },
     SetWorkerWallet {
         ip_address: String,
@@ -21,6 +22,10 @@ pub enum ExecuteMsg {
     SetWorkerAddress {
         new_ip_address: String,
         old_ip_address: String,
+    },
+    SetWorkerType {
+        ip_address: String,
+        worker_type: WorkerType,
     },
     ReportLiveliness {},
     ReportWork {},
