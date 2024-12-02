@@ -27,6 +27,9 @@ pub enum ExecuteMsg {
         ip_address: String,
         worker_type: WorkerType,
     },
+    RemoveWorker {
+        ip_address: String,
+    },
     ReportLiveliness {},
     ReportWork {},
 }

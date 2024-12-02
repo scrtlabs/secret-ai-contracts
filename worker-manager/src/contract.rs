@@ -63,6 +63,7 @@ pub fn execute(
             ip_address,
             worker_type,
         } => try_set_worker_type(deps, info, ip_address, worker_type),
+        ExecuteMsg::RemoveWorker { ip_address } => try_remove_worker(deps, info, ip_address),
         ExecuteMsg::ReportLiveliness {} => try_report_liveliness(deps, info),
         ExecuteMsg::ReportWork {} => try_report_work(deps, info),
     }
@@ -163,6 +164,26 @@ pub fn try_set_worker_type(
         };
 
         WORKERS_MAP.insert(_deps.storage, &worker.ip_address, &worker)?;
+        Ok(Response::new().set_data(to_binary(&worker)?))
+    } else {
+        Err(StdError::generic_err("Didn't find worker"))
+    }
+}
+
+pub fn try_remove_worker(
+    _deps: DepsMut,
+    _info: MessageInfo,
+    ip_address: String,
+) -> StdResult<Response> {
+    let worker_entry = WORKERS_MAP.get(_deps.storage, &ip_address);
+    if let Some(worker) = worker_entry {
+        if _info.sender != worker.payment_wallet {
+            return Err(StdError::generic_err(
+                "Only the owner has the authority to remove the worker",
+            ));
+        }
+
+        WORKERS_MAP.remove(_deps.storage, &ip_address)?;
         Ok(Response::new().set_data(to_binary(&worker)?))
     } else {
         Err(StdError::generic_err("Didn't find worker"))
@@ -523,6 +544,51 @@ mod tests {
             res.unwrap_err(),
             StdError::generic_err("Only the owner has the authority to modify the IP address",)
         );
+    }
+
+    #[test]
+    fn remove_worker() {
+        let (res, mut deps) = init_contract();
+        assert_eq!(res.unwrap().messages.len(), 0);
+
+        let ip_address_1 = String::from("127.0.0.1");
+        let ip_address_2 = String::from("127.0.0.2");
+
+        let payment_wallet_1 = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03".to_string();
+
+        let res = register_worker(
+            &mut deps,
+            ip_address_1.clone(),
+            payment_wallet_1.clone(),
+            ATTESTATION_REPORT.into(),
+            WorkerType::AI,
+        )
+        .unwrap();
+        assert_eq!(0, res.messages.len());
+
+        let res = register_worker(
+            &mut deps,
+            ip_address_2.clone(),
+            payment_wallet_1.clone(),
+            ATTESTATION_REPORT.into(),
+            WorkerType::AI,
+        )
+        .unwrap();
+        assert_eq!(0, res.messages.len());
+
+        let execute_msg = ExecuteMsg::RemoveWorker { ip_address: ip_address_1.clone() }; 
+        let res = execute(deps.as_mut(), mock_env(), mock_info(PAYMENT_WALLET, &[]), execute_msg).unwrap();
+        let worker: Worker = from_binary(&res.data.unwrap()).unwrap();
+        assert_eq!(worker.ip_address, ip_address_1);
+
+        let execute_msg = ExecuteMsg::RemoveWorker { ip_address: ip_address_2.clone() }; 
+        let res = execute(deps.as_mut(), mock_env(), mock_info(PAYMENT_WALLET, &[]), execute_msg).unwrap();
+        let worker: Worker = from_binary(&res.data.unwrap()).unwrap();
+        assert_eq!(worker.ip_address, ip_address_2);
+
+        let execute_msg = ExecuteMsg::RemoveWorker { ip_address: ip_address_2.clone() }; 
+        let res = execute(deps.as_mut(), mock_env(), mock_info(PAYMENT_WALLET, &[]), execute_msg);
+        assert!(res.is_err());
     }
 
     #[test]
