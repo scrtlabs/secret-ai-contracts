@@ -1,8 +1,9 @@
 use crate::msg::{
-    ExecuteMsg, GetLivelinessChallengeResponse, GetWorkersResponse, InstantiateMsg, MigrateMsg,
-    QueryMsg, SubscriberStatus, SubscriberStatusQuery, SubscriberStatusResponse,
+    ExecuteMsg, GetLivelinessChallengeResponse, GetModelsResponse, GetURLsResponse,
+    GetWorkersResponse, InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatus,
+    SubscriberStatusQuery, SubscriberStatusResponse,
 };
-use crate::state::{config, State, Worker, WorkerType, WORKERS_MAP};
+use crate::state::{config, State, Worker, WORKERS_MAP};
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
 };
@@ -75,7 +76,7 @@ pub fn try_register_worker(
     ip_address: String,
     payment_wallet: String,
     attestation_report: String,
-    worker_type: WorkerType,
+    worker_type: String,
 ) -> StdResult<Response> {
     let worker = Worker {
         ip_address,
@@ -147,7 +148,7 @@ pub fn try_set_worker_type(
     _deps: DepsMut,
     _info: MessageInfo,
     ip_address: String,
-    worker_type: WorkerType,
+    worker_type: String,
 ) -> StdResult<Response> {
     let worker_entry = WORKERS_MAP.get(_deps.storage, &ip_address);
     if let Some(worker) = worker_entry {
@@ -208,6 +209,15 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             subscriber_public_key,
         } => to_binary(&query_workers(deps, signature, subscriber_public_key)?),
         QueryMsg::GetLivelinessChallenge {} => to_binary(&query_liveliness_challenge(deps)?),
+        QueryMsg::GetModels {
+            signature,
+            subscriber_public_key,
+        } => to_binary(&query_models(deps, signature, subscriber_public_key)?),
+        QueryMsg::GetURLs {
+            signature,
+            subscriber_public_key,
+            model,
+        } => to_binary(&query_urls(deps, signature, subscriber_public_key, model)?),
     }
 }
 
@@ -219,11 +229,11 @@ pub fn migrate(_deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response
     }
 }
 
-fn query_workers(
+fn signature_verification(
     _deps: Deps,
     _signature: String,
     _sender_public_key: String,
-) -> StdResult<GetWorkersResponse> {
+) -> StdResult<bool> {
     let public_key_hex = _sender_public_key.clone();
     let signature_hex = _signature.clone();
 
@@ -235,13 +245,20 @@ fn query_workers(
 
     let message_hash = Sha256::digest(public_key_bytes.clone());
 
-    let verify = _deps
+    _deps
         .api
         .secp256k1_verify(&message_hash, &signature_bytes, &public_key_bytes)
         .map_err(|e| {
             StdError::generic_err("Failed to verify signature: ".to_string() + &e.to_string())
-        })?;
+        })
+}
 
+fn query_workers(
+    _deps: Deps,
+    _signature: String,
+    _sender_public_key: String,
+) -> StdResult<GetWorkersResponse> {
+    let verify = signature_verification(_deps, _signature, _sender_public_key)?;
     if !verify {
         return Err(StdError::generic_err("Signature verification failed"));
     }
@@ -302,6 +319,37 @@ fn query_workers(
     Ok(GetWorkersResponse { workers })
 }
 
+fn query_models(
+    _deps: Deps,
+    _signature: String,
+    _sender_public_key: String,
+) -> StdResult<GetModelsResponse> {
+    let verify = signature_verification(_deps, _signature, _sender_public_key)?;
+    if !verify {
+        return Err(StdError::generic_err("Signature verification failed"));
+    }
+
+    Ok(GetModelsResponse {
+        models: vec!["llama3.1:70b".into()],
+    })
+}
+
+fn query_urls(
+    _deps: Deps,
+    _signature: String,
+    _sender_public_key: String,
+    _model: Option<String>,
+) -> StdResult<GetURLsResponse> {
+    let verify = signature_verification(_deps, _signature, _sender_public_key)?;
+    if !verify {
+        return Err(StdError::generic_err("Signature verification failed"));
+    }
+
+    Ok(GetURLsResponse {
+        urls: vec!["https://ai1.myclaive.com:21434".into()],
+    })
+}
+
 fn query_liveliness_challenge(_deps: Deps) -> StdResult<GetLivelinessChallengeResponse> {
     // TODO: IMPLEMENT ME
     Ok(GetLivelinessChallengeResponse {})
@@ -317,6 +365,7 @@ mod tests {
     const IP_ADDRESS: &str = "127.0.0.1";
     const PAYMENT_WALLET: &str = "secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03";
     const ATTESTATION_REPORT: &str = "";
+    const WORKER_TYPE: &str = "llama3.1:70b";
 
     #[test]
     fn proper_initialization() {
@@ -354,7 +403,7 @@ mod tests {
         ip_address: String,
         payment_wallet: String,
         attestation_report: String,
-        worker_type: WorkerType,
+        worker_type: String,
     ) -> StdResult<Response> {
         let execute_msg = ExecuteMsg::RegisterWorker {
             ip_address,
@@ -380,7 +429,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
 
@@ -391,7 +440,7 @@ mod tests {
                 ip_address: IP_ADDRESS.into(),
                 payment_wallet: PAYMENT_WALLET.into(),
                 attestation_report: ATTESTATION_REPORT.into(),
-                worker_type: WorkerType::AI
+                worker_type: WORKER_TYPE.into(),
             }
         );
     }
@@ -406,7 +455,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -432,7 +481,7 @@ mod tests {
                 ip_address: IP_ADDRESS.into(),
                 payment_wallet: new_payment_wallet,
                 attestation_report: ATTESTATION_REPORT.into(),
-                worker_type: WorkerType::AI,
+                worker_type: WORKER_TYPE.into(),
             }
         );
     }
@@ -447,7 +496,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -482,7 +531,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -508,7 +557,7 @@ mod tests {
                 ip_address: new_ip_address,
                 payment_wallet: PAYMENT_WALLET.into(),
                 attestation_report: ATTESTATION_REPORT.into(),
-                worker_type: WorkerType::AI,
+                worker_type: WORKER_TYPE.into(),
             }
         );
     }
@@ -523,7 +572,7 @@ mod tests {
             IP_ADDRESS.into(),
             PAYMENT_WALLET.into(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -561,7 +610,7 @@ mod tests {
             ip_address_1.clone(),
             payment_wallet_1.clone(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -571,23 +620,46 @@ mod tests {
             ip_address_2.clone(),
             payment_wallet_1.clone(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
 
-        let execute_msg = ExecuteMsg::RemoveWorker { ip_address: ip_address_1.clone() }; 
-        let res = execute(deps.as_mut(), mock_env(), mock_info(PAYMENT_WALLET, &[]), execute_msg).unwrap();
+        let execute_msg = ExecuteMsg::RemoveWorker {
+            ip_address: ip_address_1.clone(),
+        };
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(PAYMENT_WALLET, &[]),
+            execute_msg,
+        )
+        .unwrap();
         let worker: Worker = from_binary(&res.data.unwrap()).unwrap();
         assert_eq!(worker.ip_address, ip_address_1);
 
-        let execute_msg = ExecuteMsg::RemoveWorker { ip_address: ip_address_2.clone() }; 
-        let res = execute(deps.as_mut(), mock_env(), mock_info(PAYMENT_WALLET, &[]), execute_msg).unwrap();
+        let execute_msg = ExecuteMsg::RemoveWorker {
+            ip_address: ip_address_2.clone(),
+        };
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(PAYMENT_WALLET, &[]),
+            execute_msg,
+        )
+        .unwrap();
         let worker: Worker = from_binary(&res.data.unwrap()).unwrap();
         assert_eq!(worker.ip_address, ip_address_2);
 
-        let execute_msg = ExecuteMsg::RemoveWorker { ip_address: ip_address_2.clone() }; 
-        let res = execute(deps.as_mut(), mock_env(), mock_info(PAYMENT_WALLET, &[]), execute_msg);
+        let execute_msg = ExecuteMsg::RemoveWorker {
+            ip_address: ip_address_2.clone(),
+        };
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(PAYMENT_WALLET, &[]),
+            execute_msg,
+        );
         assert!(res.is_err());
     }
 
@@ -608,7 +680,7 @@ mod tests {
             ip_address_1.clone(),
             payment_wallet_1.clone(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -618,7 +690,7 @@ mod tests {
             ip_address_2.clone(),
             payment_wallet_1.clone(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
         assert_eq!(0, res.messages.len());
@@ -628,7 +700,7 @@ mod tests {
             ip_address_3.clone(),
             payment_wallet_2.clone(),
             ATTESTATION_REPORT.into(),
-            WorkerType::AI,
+            WORKER_TYPE.into(),
         )
         .unwrap();
         assert_eq!(0, res.messages.len());

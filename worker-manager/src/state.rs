@@ -12,19 +12,13 @@ pub struct State {
     pub admin: Addr,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq, JsonSchema)]
-pub enum WorkerType {
-    Activation,
-    AI,
-}
-
 pub static WORKERS_MAP: Keymap<String, Worker> = Keymap::new(b"workers");
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct Worker {
     pub ip_address: String,
     pub payment_wallet: String,
     pub attestation_report: String,
-    pub worker_type: WorkerType,
+    pub worker_type: String,
 }
 
 pub fn config(storage: &mut dyn Storage) -> Singleton<State> {

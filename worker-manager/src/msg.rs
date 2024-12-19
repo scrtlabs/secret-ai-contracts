@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::{Worker, WorkerType};
+use crate::state::Worker;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {}
@@ -13,7 +13,7 @@ pub enum ExecuteMsg {
         ip_address: String,
         payment_wallet: String,
         attestation_report: String,
-        worker_type: WorkerType,
+        worker_type: String,
     },
     SetWorkerWallet {
         ip_address: String,
@@ -25,7 +25,7 @@ pub enum ExecuteMsg {
     },
     SetWorkerType {
         ip_address: String,
-        worker_type: WorkerType,
+        worker_type: String,
     },
     RemoveWorker {
         ip_address: String,
@@ -41,6 +41,15 @@ pub enum QueryMsg {
         signature: String,
         subscriber_public_key: String,
     },
+    GetModels {
+        signature: String,
+        subscriber_public_key: String,
+    },
+    GetURLs {
+        signature: String,
+        subscriber_public_key: String,
+        model: Option<String>,
+    },
     GetLivelinessChallenge {},
 }
 
@@ -48,6 +57,18 @@ pub enum QueryMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct GetWorkersResponse {
     pub workers: Vec<Worker>,
+}
+
+// We define a custom struct for each query response
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+pub struct GetModelsResponse {
+    pub models: Vec<String>,
+}
+
+// We define a custom struct for each query response
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+pub struct GetURLsResponse {
+    pub urls: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
