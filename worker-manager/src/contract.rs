@@ -3,7 +3,7 @@ use crate::msg::{
     GetWorkersResponse, InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatus,
     SubscriberStatusQuery, SubscriberStatusResponse,
 };
-use crate::state::{config, State, Worker, WORKERS_MAP};
+use crate::state::{config, State, Worker, WORKERS_MAP, config_read};
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
 };
@@ -78,6 +78,13 @@ pub fn try_register_worker(
     attestation_report: String,
     worker_type: String,
 ) -> StdResult<Response> {
+    // Check if the sender is the admin
+    let config = config_read(_deps.storage);
+    let state = config.load()?;
+    if _info.sender != state.admin {
+        return Err(StdError::generic_err("Only admin can register workers"));
+    }
+        
     let worker = Worker {
         ip_address,
         payment_wallet,
@@ -210,14 +217,14 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         } => to_binary(&query_workers(deps, signature, subscriber_public_key)?),
         QueryMsg::GetLivelinessChallenge {} => to_binary(&query_liveliness_challenge(deps)?),
         QueryMsg::GetModels {
-            signature,
-            subscriber_public_key,
-        } => to_binary(&query_models(deps, signature, subscriber_public_key)?),
+            // signature,
+            // subscriber_public_key,
+        } => to_binary(&query_models(deps)?),
         QueryMsg::GetURLs {
-            signature,
-            subscriber_public_key,
+            // signature,
+            // subscriber_public_key,
             model,
-        } => to_binary(&query_urls(deps, signature, subscriber_public_key, model)?),
+        } => to_binary(&query_urls(deps, model)?),
     }
 }
 
@@ -321,13 +328,13 @@ fn query_workers(
 
 fn query_models(
     _deps: Deps,
-    _signature: String,
-    _sender_public_key: String,
+    // _signature: String,
+    // _sender_public_key: String,
 ) -> StdResult<GetModelsResponse> {
-    let verify = signature_verification(_deps, _signature, _sender_public_key)?;
-    if !verify {
-        return Err(StdError::generic_err("Signature verification failed"));
-    }
+    // let verify = signature_verification(_deps, _signature, _sender_public_key)?;
+    // if !verify {
+    //     return Err(StdError::generic_err("Signature verification failed"));
+    // }
 
     Ok(GetModelsResponse {
         models: vec!["llama3.1:70b".into()],
@@ -336,14 +343,14 @@ fn query_models(
 
 fn query_urls(
     _deps: Deps,
-    _signature: String,
-    _sender_public_key: String,
+    // _signature: String,
+    // _sender_public_key: String,
     _model: Option<String>,
 ) -> StdResult<GetURLsResponse> {
-    let verify = signature_verification(_deps, _signature, _sender_public_key)?;
-    if !verify {
-        return Err(StdError::generic_err("Signature verification failed"));
-    }
+    // let verify = signature_verification(_deps, _signature, _sender_public_key)?;
+    // if !verify {
+    //     return Err(StdError::generic_err("Signature verification failed"));
+    // }
 
     Ok(GetURLsResponse {
         urls: vec!["https://ai1.myclaive.com:21434".into()],

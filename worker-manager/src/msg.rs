@@ -42,12 +42,12 @@ pub enum QueryMsg {
         subscriber_public_key: String,
     },
     GetModels {
-        signature: String,
-        subscriber_public_key: String,
+        // signature: String,
+        // subscriber_public_key: String,
     },
     GetURLs {
-        signature: String,
-        subscriber_public_key: String,
+        // signature: String,
+        // subscriber_public_key: String,
         model: Option<String>,
     },
     GetLivelinessChallenge {},
