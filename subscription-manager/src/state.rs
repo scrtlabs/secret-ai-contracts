@@ -11,6 +11,9 @@ pub static CONFIG_KEY: &[u8] = b"config";
 // Keymap for storing subscribers' information, using public keys as keys
 pub static SB_MAP: Keymap<String, Subscriber> = Keymap::new(b"SB_MAP");
 
+// Keymap for storing API keys
+pub static API_KEY_MAP: Keymap<String, ApiKey> = Keymap::new(b"API_KEY_MAP");
+
 // Structure representing the state of the contract
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct State {
@@ -25,6 +28,13 @@ pub struct Subscriber {
     pub status: bool,
     // Public key of the subscriber
     pub public_key: String,
+}
+
+// Structure representing an API key
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+pub struct ApiKey {
+    // API key value
+    pub key: String,
 }
 
 // Function to access and modify the configuration state

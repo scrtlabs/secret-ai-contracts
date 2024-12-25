@@ -2,8 +2,8 @@ use cosmwasm_std::{
     entry_point, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult
 };
 use sha2::{Digest, Sha256};
-use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatusResponse};
-use crate::state::{config, config_read, State, Subscriber, SB_MAP};
+use crate::msg::{ExecuteMsg, GetApiKeysResponse, InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatusResponse};
+use crate::state::{config, config_read, ApiKey, State, Subscriber, API_KEY_MAP, SB_MAP};
 
 // Entry point for contract initialization
 #[entry_point]
@@ -43,7 +43,68 @@ pub fn execute(
         ExecuteMsg::RemoveSubscriber { public_key } => try_remove_subscriber(deps, info, public_key),
         // Handle setting a new admin
         ExecuteMsg::SetAdmin { public_key } => try_set_admin(deps, info, public_key),
+        // Handle adding an API key
+        ExecuteMsg::AddApiKey { api_key } => try_add_api_key(deps, info, api_key),
+        // Handle revoking an API key
+        ExecuteMsg::RevokeApiKey { api_key } => try_revoke_api_key(deps, info, api_key),
     }
+}
+
+// Function to add a new API key
+pub fn try_add_api_key(
+    deps: DepsMut,
+    info: MessageInfo,
+    api_key: String,
+) -> StdResult<Response> {
+    let config = config_read(deps.storage);
+    let state = config.load()?;
+
+    // Check if the sender is the admin
+    if info.sender != state.admin {
+        return Err(StdError::generic_err("Only admin can add API keys"));
+    }
+
+    // Check if the API key already exists
+    if API_KEY_MAP.contains(deps.storage, &api_key) {
+        return Err(StdError::generic_err("API key already exists"));
+    }
+
+    // Insert the API key into the map
+    let api_key_data = ApiKey { key: api_key.clone() };
+    API_KEY_MAP.insert(deps.storage, &api_key, &api_key_data)
+        .map_err(|err| StdError::generic_err(err.to_string()))?;
+
+    Ok(Response::new()
+        .add_attribute("action", "add_api_key")
+        .add_attribute("api_key", api_key))
+}
+
+// Function to revoke an API key
+pub fn try_revoke_api_key(
+    deps: DepsMut,
+    info: MessageInfo,
+    api_key: String,
+) -> StdResult<Response> {
+    let config = config_read(deps.storage);
+    let state = config.load()?;
+
+    // Check if the sender is the admin
+    if info.sender != state.admin {
+        return Err(StdError::generic_err("Only admin can revoke API keys"));
+    }
+
+    // Check if the API key exists
+    if !API_KEY_MAP.contains(deps.storage, &api_key) {
+        return Err(StdError::generic_err("API key not found"));
+    }
+
+    // Remove the API key from the map
+    API_KEY_MAP.remove(deps.storage, &api_key)
+        .map_err(|err| StdError::generic_err(err.to_string()))?;
+
+    Ok(Response::new()
+        .add_attribute("action", "revoke_api_key")
+        .add_attribute("api_key", api_key))
 }
 
 #[entry_point]
@@ -144,6 +205,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         // Handle query for subscriber status
         QueryMsg::SubscriberStatus { public_key } => to_binary(&query_subscriber(deps, public_key)?),
+        QueryMsg::ApiKeys {} => to_binary(&query_api_keys(deps)?),
     }
 }
 
@@ -162,12 +224,70 @@ fn query_subscriber(
     Ok(SubscriberStatusResponse { active: false })
 }
 
+// Function to query all API keys
+pub fn query_api_keys(deps: Deps) -> StdResult<GetApiKeysResponse> {
+    let api_keys: Vec<ApiKey> = API_KEY_MAP
+        .iter(deps.storage)?
+        .filter_map(|x| {
+            if let Ok((_, api_key)) = x {
+                Some(api_key)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(GetApiKeysResponse { api_keys })
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     use cosmwasm_std::testing::*;
     use cosmwasm_std::{attr, from_binary, Api, Coin, Uint128};
     use secp256k1::{Message, PublicKey, Secp256k1, ecdsa::Signature, SecretKey};
+
+    #[test]
+    fn add_and_query_api_keys() {
+        let mut deps = mock_dependencies();
+        let info = mock_info("admin", &[]);
+        let init_msg = InstantiateMsg {};
+        instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
+
+        let add_msg = ExecuteMsg::AddApiKey {
+            api_key: "test_api_key".to_string(),
+        };
+        execute(deps.as_mut(), mock_env(), info.clone(), add_msg).unwrap();
+
+        let query_msg = QueryMsg::ApiKeys {};
+        let res = query(deps.as_ref(), mock_env(), query_msg).unwrap();
+        let response: GetApiKeysResponse = from_binary(&res).unwrap();
+
+        assert_eq!(response.api_keys, vec![ApiKey { key: "test_api_key".to_string() }]);
+    }
+
+    #[test]
+    fn revoke_api_key() {
+        let mut deps = mock_dependencies();
+        let info = mock_info("admin", &[]);
+        let init_msg = InstantiateMsg {};
+        instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
+
+        let add_msg = ExecuteMsg::AddApiKey {
+            api_key: "test_api_key".to_string(),
+        };
+        execute(deps.as_mut(), mock_env(), info.clone(), add_msg).unwrap();
+
+        let revoke_msg = ExecuteMsg::RevokeApiKey {
+            api_key: "test_api_key".to_string(),
+        };
+        execute(deps.as_mut(), mock_env(), info.clone(), revoke_msg).unwrap();
+
+        let query_msg = QueryMsg::ApiKeys {};
+        let res = query(deps.as_ref(), mock_env(), query_msg).unwrap();
+        let response: GetApiKeysResponse = from_binary(&res).unwrap();
+
+        assert!(response.api_keys.is_empty());
+    }
 
     #[test]
     /// Test for successful initialization of the contract

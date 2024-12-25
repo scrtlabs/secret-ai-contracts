@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::state::ApiKey;
 
 // Struct for the message used to instantiate the contract
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
@@ -17,6 +18,10 @@ pub enum ExecuteMsg {
 
     // Message to set a new admin for the contract using a public key
     SetAdmin { public_key: String },
+    // Message to add an API key
+    AddApiKey { api_key: String },
+    // Message to revoke an API key
+    RevokeApiKey { api_key: String },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
@@ -34,6 +39,7 @@ pub enum QueryMsg {
     SubscriberStatus {
         public_key: String,
     },
+    ApiKeys {},
 }
 
 // Struct used to respond to a query about a subscriber's status
@@ -41,4 +47,10 @@ pub enum QueryMsg {
 pub struct SubscriberStatusResponse {
     // Indicates if the subscriber is active or not
     pub active: bool,
+}
+
+// Structure for GetApiKeysResponse
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+pub struct GetApiKeysResponse {
+    pub api_keys: Vec<ApiKey>,
 }
