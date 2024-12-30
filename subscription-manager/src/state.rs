@@ -30,11 +30,11 @@ pub struct Subscriber {
     pub public_key: String,
 }
 
-// Structure representing an API key
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct ApiKey {
-    // API key value
-    pub key: String,
+    // Previously `key: String`,
+    // Maybe rename to `hash: String` or `hashed_key: String`.
+    pub hashed_key: String,
 }
 
 // Function to access and modify the configuration state

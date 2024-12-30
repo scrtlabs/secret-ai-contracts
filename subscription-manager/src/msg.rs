@@ -1,6 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use crate::state::ApiKey;
+use secret_toolkit::permit::Permit;
+
 
 // Struct for the message used to instantiate the contract
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
@@ -39,7 +41,10 @@ pub enum QueryMsg {
     SubscriberStatus {
         public_key: String,
     },
-    ApiKeys {},
+    /// Query API keys using a permit (only the admin's permit will succeed)
+    ApiKeysWithPermit {
+        permit: Permit,
+    },
 }
 
 // Struct used to respond to a query about a subscriber's status

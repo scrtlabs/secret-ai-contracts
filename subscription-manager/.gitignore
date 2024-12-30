@@ -1,2 +1,6 @@
 contract-opt.wasm
 Dockerfile
+
+permit.json
+signed_permit.json
+claive_subscription_manager.wasm

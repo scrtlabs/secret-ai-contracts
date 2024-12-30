@@ -9,30 +9,35 @@ This repository contains a CosmWasm smart contract for managing subscriptions on
 The Claive Subscription Manager Contract is designed for subscription-based use cases, where an admin manages subscribers using their public keys. The contract keeps track of registered subscribers and API keys, ensuring that only authorized admins can manage them.
 
 ### Contract State
+
 The contract stores:
+
 - **Admin Address**: The account that has permission to register or remove subscribers, manage API keys, and change admin rights.
 - **Subscribers**: A mapping from a public key to the subscriber's status (active or inactive).
-- **API Keys**: A mapping of API keys used for external access control.
+- **API Keys**: A mapping of hashed API keys used for external access control. The API keys are stored as SHA-256 hashes to enhance security.
 
 ### Methods
 
 1. **Instantiate**
    - Initializes the contract and sets the admin to the sender's address.
+
 2. **Execute**
    - `RegisterSubscriber`: Adds a new subscriber using their public key. Only callable by the admin.
    - `RemoveSubscriber`: Removes a subscriber using their public key. Only callable by the admin.
    - `SetAdmin`: Changes the admin to a new address. Only callable by the current admin.
-   - `AddApiKey`: Adds a new API key for access control. Only callable by the admin.
-   - `RevokeApiKey`: Revokes an existing API key. Only callable by the admin.
+   - `AddApiKey`: Adds a new API key for access control. The API key is hashed using SHA-256 before storage. Only callable by the admin.
+   - `RevokeApiKey`: Revokes an existing API key. The API key must be provided in plaintext, and the contract verifies its hash. Only callable by the admin.
+
 3. **Query**
    - `SubscriberStatus`: Checks if a subscriber with the given public key is active.
-   - `ApiKeys`: Returns a list of all registered API keys.
+   - `ApiKeysWithPermit`: Returns a list of all registered API keys. The query requires a valid permit signed by the admin to ensure secure access.
 
 ---
 
 ## Prerequisites
 
 To use and deploy this contract, you'll need:
+
 - [**SecretCLI**](https://docs.scrt.network/secret-network-documentation/infrastructure/secret-cli) for interacting with the Secret Network.
 - [**LocalSecret**](https://docs.scrt.network/secret-network-documentation/development/readme-1/setting-up-your-environment) for local testing and development.
 
@@ -45,39 +50,30 @@ Please refer to the documentation above to install and familiarize yourself with
 ### Prerequisites
 
 - **Rust** and **wasm-opt** must be installed.
-- Add the `wasm32-unknown-unknown` target for Rust if you haven’t done so:
-  ```bash
-  rustup target add wasm32-unknown-unknown
-  ```
+- Add the wasm32-unknown-unknown target for Rust if you haven’t done so:
+
+```bash
+rustup target add wasm32-unknown-unknown
+```
 
 ### Build Instructions
 
 1. **Build the Contract**:
-   ```bash
-   cargo build --release --target wasm32-unknown-unknown
-   ```
+
+```bash
+cargo build --release --target wasm32-unknown-unknown
+```
 
 2. **Optimize the Contract**:
-   ```bash
-   wasm-opt -Oz -o contract-opt.wasm target/wasm32-unknown-unknown/release/claive_subscription_manager.wasm
-   ```
+
+```bash
+wasm-opt -Oz -o contract-opt.wasm target/wasm32-unknown-unknown/release/claive_subscription_manager.wasm
+```
 
 3. **Compress the Contract**:
-   ```bash
-   gzip -9 -c contract-opt.wasm > contract.wasm.gz
-   ```
 
-### Example Output
 ```bash
-$ cargo build --release --target wasm32-unknown-unknown
-   Compiling claive_subscription_manager v0.1.0 (/path/to/contract)
-    Finished release [optimized] target(s) in 23.45s
-
-$ wasm-opt -Oz -o contract-opt.wasm target/wasm32-unknown-unknown/release/claive_subscription_manager.wasm
-# wasm-opt optimization completed
-
-$ gzip -9 -c contract-opt.wasm > contract.wasm.gz
-# Contract compressed successfully
+gzip -9 -c contract-opt.wasm > contract.wasm.gz
 ```
 
 ---
@@ -91,33 +87,15 @@ $ gzip -9 -c contract-opt.wasm > contract.wasm.gz
 ### Deploy Instructions
 
 1. **Deploy the Contract**:
-   ```bash
-   secretcli tx compute store contract.wasm.gz --gas 5000000 --from myWallet -y
-   ```
 
-2. **Get the `code_id`**:
-   ```bash
-   secretcli query compute list-code
-   ```
-
-### Example Output
 ```bash
-$ secretcli tx compute store contract.wasm.gz --gas 5000000 --from myWallet -y
-{
-  "height": "0",
-  "txhash": "DABA1EA6380DF252C844355109298681C28EC52BE0031E7E3B8730D8ECFC2BE0",
-  "code": 0,
-  "logs": []
-}
+secretcli tx compute store contract.wasm.gz --gas 5000000 --from myWallet -y
+```
 
-$ secretcli query compute list-code
-[
-  {
-    "code_id": 1,
-    "creator": "secret1msmqzrp8ahvwe2jzk9n0xula0vnmv7vt3883y8",
-    "code_hash": "afd0b5bda5a14dd41dc98d4cf112c1a239b5689796ac0fec4845db69d0a11f28"
-  }
-]
+2. **Get the code_id**:
+
+```bash
+secretcli query compute list-code
 ```
 
 ---
@@ -126,39 +104,20 @@ $ secretcli query compute list-code
 
 ### Prerequisites
 
-- You need the `code_id` from the previous step.
+- You need the code_id from the previous step.
 
 ### Instantiate Instructions
 
 1. **Instantiate the Contract**:
-   ```bash
-   secretcli tx compute instantiate <code_id> '{}' --from myWallet --label subContract -y
-   ```
+
+```bash
+secretcli tx compute instantiate <code_id> '{}' --from myWallet --label subContract -y
+```
 
 2. **Get the Contract Address**:
-   ```bash
-   secretcli query compute list-contract-by-code <code_id>
-   ```
 
-### Example Output
 ```bash
-$ secretcli tx compute instantiate 1 '{}' --from myWallet --label subContract -y
-{
-  "height": "0",
-  "txhash": "ACFD28FB7DE8ADC706B3595A32E2EA85219E203C9CA67EEF1DF5A7E23509FD9B",
-  "code": 0,
-  "logs": []
-}
-
-$ secretcli query compute list-contract-by-code 1
-[
-  {
-    "contract_address": "secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf",
-    "code_id": 1,
-    "label": "subContract",
-    "creator": "secret1msmqzrp8ahvwe2jzk9n0xula0vnmv7vt3883y8"
-  }
-]
+secretcli query compute list-contract-by-code <code_id>
 ```
 
 ---
@@ -170,11 +129,13 @@ $ secretcli query compute list-contract-by-code 1
 **Description**: Register a subscriber using their public key. Only the admin can perform this action.
 
 #### Command
+
 ```bash
 secretcli tx compute execute <contract_address> '{"register_subscriber":{"public_key":"subscriber_pub_key"}}' --from myWallet -y
 ```
 
 #### Example
+
 ```bash
 $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"register_subscriber":{"public_key":"subscriber_pub_key"}}' --from myWallet -y
 {
@@ -192,11 +153,13 @@ $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"
 **Description**: Check if a subscriber is active or not.
 
 #### Command
+
 ```bash
 secretcli query compute query <contract_address> '{"subscriber_status":{"public_key":"subscriber_pub_key"}}'
 ```
 
 #### Example
+
 ```bash
 $ secretcli query compute query secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"subscriber_status":{"public_key":"subscriber_pub_key"}}'
 {
@@ -211,11 +174,13 @@ $ secretcli query compute query secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{
 **Description**: Remove a subscriber using their public key. Only the admin can perform this action.
 
 #### Command
+
 ```bash
 secretcli tx compute execute <contract_address> '{"remove_subscriber":{"public_key":"subscriber_pub_key"}}' --from myWallet -y
 ```
 
 #### Example
+
 ```bash
 $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"remove_subscriber":{"public_key":"subscriber_pub_key"}}' --from myWallet -y
 {
@@ -233,11 +198,13 @@ $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"
 **Description**: Update the admin to a new public key. Only the current admin can perform this action.
 
 #### Command
+
 ```bash
 secretcli tx compute execute <contract_address> '{"set_admin":{"public_key":"new_admin_pub_key"}}' --from myWallet -y
 ```
 
 #### Example
+
 ```bash
 $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"set_admin":{"public_key":"secret1qvapn5ns28xrevn7kdudwvrp6a4fven2kzq8jc"}}' --from myWallet -y
 {
@@ -252,14 +219,16 @@ $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"
 
 ### Use Case 5: Add an API Key
 
-**Description**: Add a new API key for access control. Only the admin can perform this action.
+**Description**: Add a new API key for access control. Only the admin can perform this action. The API key is hashed using SHA-256 before storage.
 
 #### Command
+
 ```bash
 secretcli tx compute execute <contract_address> '{"add_api_key":{"api_key":"new_api_key"}}' --from myWallet -y
 ```
 
 #### Example
+
 ```bash
 $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"add_api_key":{"api_key":"test_api_key"}}' --from myWallet -y
 {
@@ -274,14 +243,16 @@ $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"
 
 ### Use Case 6: Revoke an API Key
 
-**Description**: Revoke an existing API key. Only the admin can perform this action.
+**Description**: Revoke an existing API key. Only the admin can perform this action. The API key must be provided in plaintext, and the contract verifies its hash before removal.
 
 #### Command
+
 ```bash
 secretcli tx compute execute <contract_address> '{"revoke_api_key":{"api_key":"api_key_to_revoke"}}' --from myWallet -y
 ```
 
 #### Example
+
 ```bash
 $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"revoke_api_key":{"api_key":"test_api_key"}}'
 {
@@ -294,22 +265,25 @@ $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"
 
 ---
 
-### Use Case 7: Query All API Keys
+### Use Case 7: Query API Keys with Permit
 
-**Description**: Retrieve the list of all registered API keys. Only available through querying the contract.
+**Description**: Retrieve the list of all registered API keys. Requires a valid permit signed by the admin.
 
 #### Command
+
 ```bash
-secretcli query compute query <contract_address> '{"api_keys":{}}'
+secretcli query compute query <contract_address> '{"api_keys_with_permit":{"permit":<permit_json>}}'
 ```
 
 #### Example
+
 ```bash
-$ secretcli query compute query secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"api_keys":{}}'
+$ secretcli query compute query secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"api_keys_with_permit":{"permit":<permit_json>}}'
 {
   "api_keys": [
-    { "key": "test_api_key1" },
-    { "key": "test_api_key2" }
+    { "hashed_key": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+    { "hashed_key": "d14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ab16f40c07b5a79a5" }
   ]
 }
 ```
+
