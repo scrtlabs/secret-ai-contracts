@@ -126,9 +126,29 @@ pub fn try_revoke_api_key(
 }
 
 #[entry_point]
-pub fn migrate(_deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response> {
+pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response> {
     match msg {
-        MigrateMsg::Migrate {} => Ok(Response::default()),
+        MigrateMsg::Migrate {} => {
+            // Collect all keys from the API_KEY_MAP into a vector
+            // This avoids conflicts between mutable and immutable borrows of `deps.storage`
+            let keys_to_remove: Vec<String> = API_KEY_MAP
+                .iter(deps.storage)? // Retrieve the iterator over the keymap
+                .filter_map(|item| match item {
+                    Ok((key, _)) => Some(key), // Extract the key if the item is valid
+                    Err(_) => None,           // Skip any errors
+                })
+                .collect();
+
+            // Remove each key from the API_KEY_MAP
+            for key in keys_to_remove {
+                API_KEY_MAP.remove(deps.storage, &key)?; // Remove the key from the storage
+            }
+
+            // Return a response indicating successful migration
+            Ok(Response::new()
+                .add_attribute("action", "migrate")
+                .add_attribute("status", "api_key_map_cleared"))
+        }
         MigrateMsg::StdError {} => Err(StdError::generic_err("this is an std error")),
     }
 }
@@ -304,6 +324,62 @@ mod tests {
     use super::*;
     use cosmwasm_std::testing::*;
     use cosmwasm_std::{attr, from_binary, Api, BlockInfo, Coin, ContractInfo, Timestamp, TransactionInfo, Uint128};
+
+    #[test]
+    fn test_migrate_clears_api_key_map() {
+        let mut deps = mock_dependencies();
+
+        // Initialize the contract with an admin address
+        let info = mock_info("admin", &[]);
+        let init_msg = InstantiateMsg {};
+        instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
+
+        // Add API keys to the `API_KEY_MAP`
+        execute(
+            deps.as_mut(),
+            mock_env(),
+            info.clone(),
+            ExecuteMsg::AddApiKey {
+                api_key: "test_key1".to_string(),
+            },
+        )
+            .unwrap();
+
+        execute(
+            deps.as_mut(),
+            mock_env(),
+            info.clone(),
+            ExecuteMsg::AddApiKey {
+                api_key: "test_key2".to_string(),
+            },
+        )
+            .unwrap();
+
+        // Ensure that the keys were added successfully
+        let keys: Vec<ApiKey> = API_KEY_MAP
+            .iter(deps.as_ref().storage) // Retrieve the Result from the keymap iterator
+            .unwrap() // Unwrap the Result to access the iterator
+            .filter_map(|kv| kv.ok().map(|(_, v)| v)) // Filter and map the keys into a vector
+            .collect();
+        assert_eq!(keys.len(), 2); // Assert that there are two keys in the map
+
+        println!("keys before migrate: {:#?}", keys);
+
+        // Perform the migration, which should clear the API_KEY_MAP
+        migrate(deps.as_mut(), mock_env(), MigrateMsg::Migrate {}).unwrap();
+
+        // Check that the API_KEY_MAP is now empty
+        let keys_after_migrate: Vec<ApiKey> = API_KEY_MAP
+            .iter(deps.as_ref().storage) // Retrieve the Result from the keymap iterator
+            .unwrap() // Unwrap the Result to access the iterator
+            .filter_map(|kv| kv.ok().map(|(_, v)| v)) // Filter and map the keys into a vector
+            .collect();
+
+        println!("keys after migrate: {:#?}", keys_after_migrate);
+
+        // Assert that no keys remain in the map
+        assert!(keys_after_migrate.is_empty());
+    }
 
     #[test]
     fn test_query_api_keys_with_real_permit() {
