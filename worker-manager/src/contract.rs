@@ -84,7 +84,9 @@ pub fn try_register_worker(
     if _info.sender != state.admin {
         return Err(StdError::generic_err("Only admin can register workers"));
     }
-        
+    
+    // TODO: validate attestation
+
     let worker = Worker {
         ip_address,
         payment_wallet,
