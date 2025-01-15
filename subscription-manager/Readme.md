@@ -29,8 +29,9 @@ The contract stores:
    - `RevokeApiKey`: Revokes an existing API key. The API key must be provided in plaintext, and the contract verifies its hash. Only callable by the admin.
 
 3. **Query**
-   - `SubscriberStatus`: Checks if a subscriber with the given public key is active.
-   - `ApiKeysWithPermit`: Returns a list of all registered API keys. The query requires a valid permit signed by the admin to ensure secure access.
+   - `SubscriberStatusWithPermit`: Checks if a subscriber with the given public key is active. Requires a valid permit signed by the admin.
+   - `ApiKeysWithPermit`: Returns a list of all registered API keys. Requires a valid permit signed by the admin to ensure secure access.
+   - `GetAdmin`: Returns the current admin address.
 
 ---
 
@@ -148,20 +149,20 @@ $ secretcli tx compute execute secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"
 
 ---
 
-### Use Case 2: Query Subscriber Status
+### Use Case 2: Query Subscriber Status with Permit
 
-**Description**: Check if a subscriber is active or not.
+**Description**: Check if a subscriber is active or not. Requires a valid permit signed by the admin.
 
 #### Command
 
 ```bash
-secretcli query compute query <contract_address> '{"subscriber_status":{"public_key":"subscriber_pub_key"}}'
+secretcli query compute query <contract_address> '{"subscriber_status_with_permit":{"public_key":"subscriber_pub_key","permit":<permit_json>}}'
 ```
 
 #### Example
 
 ```bash
-$ secretcli query compute query secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"subscriber_status":{"public_key":"subscriber_pub_key"}}'
+$ secretcli query compute query secret1nahrq5c0hf2v8fj703glsd7y3j7dccayadd9cf '{"subscriber_status_with_permit":{"public_key":"subscriber_pub_key","permit":<permit_json>}}'
 {
   "active": true
 }

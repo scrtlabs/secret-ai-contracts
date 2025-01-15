@@ -1,6 +1,5 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use crate::state::ApiKey;
 use secret_toolkit::permit::Permit;
 
 
@@ -37,11 +36,11 @@ pub enum MigrateMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
-    // Query to check the status of a subscriber using a public key
-    SubscriberStatus {
+    SubscriberStatusWithPermit {
         public_key: String,
+        permit: Permit,
     },
-    /// Query API keys using a permit (only the admin's permit will succeed)
+    GetAdmin {},
     ApiKeysWithPermit {
         permit: Permit,
     },
@@ -54,8 +53,16 @@ pub struct SubscriberStatusResponse {
     pub active: bool,
 }
 
+// Structure for API keys to respond to a query
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+pub struct ApiKeyResponse {
+    // Previously `key: String`,
+    // Maybe rename to `hash: String` or `hashed_key: String`.
+    pub hashed_key: String,
+}
+
 // Structure for GetApiKeysResponse
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct GetApiKeysResponse {
-    pub api_keys: Vec<ApiKey>,
+    pub api_keys: Vec<ApiKeyResponse>,
 }

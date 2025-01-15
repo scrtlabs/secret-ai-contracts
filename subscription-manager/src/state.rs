@@ -1,6 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use secret_toolkit::storage::{Item, Keymap};
+use secret_toolkit::storage::{Keymap};
 
 use cosmwasm_std::{Addr, Storage};
 use cosmwasm_storage::{singleton, singleton_read, ReadonlySingleton, Singleton};
@@ -26,16 +26,11 @@ pub struct State {
 pub struct Subscriber {
     // Status of the subscriber (active or not)
     pub status: bool,
-    // Public key of the subscriber
-    pub public_key: String,
 }
 
+// Structure representing an API key to be stored
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
-pub struct ApiKey {
-    // Previously `key: String`,
-    // Maybe rename to `hash: String` or `hashed_key: String`.
-    pub hashed_key: String,
-}
+pub struct ApiKey {}
 
 // Function to access and modify the configuration state
 pub fn config(storage: &mut dyn Storage) -> Singleton<State> {
