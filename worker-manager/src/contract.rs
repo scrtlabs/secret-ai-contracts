@@ -1,16 +1,15 @@
 use crate::msg::{
     ExecuteMsg, GetLivelinessChallengeResponse, GetModelsResponse, GetURLsResponse,
-    GetWorkersResponse, InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatus,
-    SubscriberStatusQuery, SubscriberStatusResponse,
+    GetWorkersResponse, InstantiateMsg, MigrateMsg, QueryMsg,
 };
-use crate::state::{config, State, Worker, WORKERS_MAP, config_read};
+use crate::state::{config, State, Worker, WORKERS_MAP};
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
 };
 use sha2::{Digest, Sha256};
 
-const SUBSCRIBER_CONTRACT_ADDRESS: &str = "secret1ttm9axv8hqwjv3qxvxseecppsrw4cd68getrvr";
-const SUBSCRIBER_CONTRACT_CODE_HASH: &str =
+const _SUBSCRIBER_CONTRACT_ADDRESS: &str = "secret1ttm9axv8hqwjv3qxvxseecppsrw4cd68getrvr";
+const _SUBSCRIBER_CONTRACT_CODE_HASH: &str =
     "c67de4cbe83764424192372e39abc0e040150d890600adefd6358abb6f0165ae";
 
 #[entry_point]
@@ -73,53 +72,50 @@ pub fn execute(
 pub fn try_register_worker(
     _deps: DepsMut,
     _info: MessageInfo,
-    ip_address: String,
-    payment_wallet: String,
-    attestation_report: String,
-    worker_type: String,
+    _ip_address: String,
+    _payment_wallet: String,
+    _attestation_report: String,
+    _worker_type: String,
 ) -> StdResult<Response> {
+    return Err(StdError::generic_err("Only admin can register workers"));
     // Check if the sender is the admin
-    let config = config_read(_deps.storage);
-    let state = config.load()?;
-    if _info.sender != state.admin {
-        return Err(StdError::generic_err("Only admin can register workers"));
-    }
-    
-    // TODO: validate attestation
+    // let config = config_read(deps.storage);
+    // let state = config.load()?;
+    // if info.sender != state.admin {
+    //     return Err(StdError::generic_err("Only admin can register workers"));
+    // }
 
-    let worker = Worker {
-        ip_address,
-        payment_wallet,
-        attestation_report,
-        worker_type,
-    };
+    // let worker = Worker {
+    //     ip_address,
+    //     payment_wallet,
+    //     attestation_report,
+    //     worker_type,
+    // };
 
-    WORKERS_MAP.insert(_deps.storage, &worker.ip_address, &worker)?;
+    // WORKERS_MAP.insert(deps.storage, &worker.ip_address, &worker)?;
 
-    Ok(Response::new().set_data(to_binary(&worker)?))
+    // Ok(Response::new().set_data(to_binary(&worker)?))
 }
 
 pub fn try_set_worker_wallet(
-    _deps: DepsMut,
-    _info: MessageInfo,
+    deps: DepsMut,
+    info: MessageInfo,
     ip_address: String,
     payment_wallet: String,
 ) -> StdResult<Response> {
-    let worker_entry = WORKERS_MAP.get(_deps.storage, &ip_address);
+    let worker_entry = WORKERS_MAP.get(deps.storage, &ip_address);
     if let Some(worker) = worker_entry {
-        if _info.sender != worker.payment_wallet {
+        if info.sender != worker.payment_wallet {
             return Err(StdError::generic_err(
                 "Only the owner has the authority to modify the payment wallet",
             ));
         }
         let worker = Worker {
             payment_wallet,
-            ip_address: worker.ip_address,
-            attestation_report: worker.attestation_report,
-            worker_type: worker.worker_type,
+            ..worker
         };
 
-        WORKERS_MAP.insert(_deps.storage, &worker.ip_address, &worker)?;
+        WORKERS_MAP.insert(deps.storage, &worker.ip_address, &worker)?;
         Ok(Response::new().set_data(to_binary(&worker)?))
     } else {
         Err(StdError::generic_err("Didn't find worker"))
@@ -127,26 +123,24 @@ pub fn try_set_worker_wallet(
 }
 
 pub fn try_set_worker_address(
-    _deps: DepsMut,
-    _info: MessageInfo,
+    deps: DepsMut,
+    info: MessageInfo,
     new_ip_address: String,
     old_ip_address: String,
 ) -> StdResult<Response> {
-    let worker_entry = WORKERS_MAP.get(_deps.storage, &old_ip_address);
+    let worker_entry = WORKERS_MAP.get(deps.storage, &old_ip_address);
     if let Some(worker) = worker_entry {
-        if _info.sender != worker.payment_wallet {
+        if info.sender != worker.payment_wallet {
             return Err(StdError::generic_err(
                 "Only the owner has the authority to modify the IP address",
             ));
         }
         let worker = Worker {
-            payment_wallet: worker.payment_wallet,
             ip_address: new_ip_address.clone(),
-            attestation_report: worker.attestation_report,
-            worker_type: worker.worker_type,
+            ..worker
         };
-        WORKERS_MAP.remove(_deps.storage, &old_ip_address)?;
-        WORKERS_MAP.insert(_deps.storage, &new_ip_address, &worker)?;
+        WORKERS_MAP.remove(deps.storage, &old_ip_address)?;
+        WORKERS_MAP.insert(deps.storage, &new_ip_address, &worker)?;
         Ok(Response::new().set_data(to_binary(&worker)?))
     } else {
         Err(StdError::generic_err("Could not find the worker"))
@@ -154,26 +148,24 @@ pub fn try_set_worker_address(
 }
 
 pub fn try_set_worker_type(
-    _deps: DepsMut,
-    _info: MessageInfo,
+    deps: DepsMut,
+    info: MessageInfo,
     ip_address: String,
     worker_type: String,
 ) -> StdResult<Response> {
-    let worker_entry = WORKERS_MAP.get(_deps.storage, &ip_address);
+    let worker_entry = WORKERS_MAP.get(deps.storage, &ip_address);
     if let Some(worker) = worker_entry {
-        if _info.sender != worker.payment_wallet {
+        if info.sender != worker.payment_wallet {
             return Err(StdError::generic_err(
                 "Only the owner has the authority to modify the worker_type",
             ));
         }
         let worker = Worker {
-            payment_wallet: worker.payment_wallet,
-            ip_address: worker.ip_address,
-            attestation_report: worker.attestation_report,
             worker_type,
+            ..worker
         };
 
-        WORKERS_MAP.insert(_deps.storage, &worker.ip_address, &worker)?;
+        WORKERS_MAP.insert(deps.storage, &worker.ip_address, &worker)?;
         Ok(Response::new().set_data(to_binary(&worker)?))
     } else {
         Err(StdError::generic_err("Didn't find worker"))
@@ -181,19 +173,19 @@ pub fn try_set_worker_type(
 }
 
 pub fn try_remove_worker(
-    _deps: DepsMut,
-    _info: MessageInfo,
+    deps: DepsMut,
+    info: MessageInfo,
     ip_address: String,
 ) -> StdResult<Response> {
-    let worker_entry = WORKERS_MAP.get(_deps.storage, &ip_address);
+    let worker_entry = WORKERS_MAP.get(deps.storage, &ip_address);
     if let Some(worker) = worker_entry {
-        if _info.sender != worker.payment_wallet {
+        if info.sender != worker.payment_wallet {
             return Err(StdError::generic_err(
                 "Only the owner has the authority to remove the worker",
             ));
         }
 
-        WORKERS_MAP.remove(_deps.storage, &ip_address)?;
+        WORKERS_MAP.remove(deps.storage, &ip_address)?;
         Ok(Response::new().set_data(to_binary(&worker)?))
     } else {
         Err(StdError::generic_err("Didn't find worker"))
@@ -239,12 +231,12 @@ pub fn migrate(_deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response
 }
 
 fn signature_verification(
-    _deps: Deps,
-    _signature: String,
-    _sender_public_key: String,
+    deps: Deps,
+    signature: String,
+    sender_public_key: String,
 ) -> StdResult<bool> {
-    let public_key_hex = _sender_public_key.clone();
-    let signature_hex = _signature.clone();
+    let public_key_hex = sender_public_key.clone();
+    let signature_hex = signature.clone();
 
     let public_key_bytes = hex::decode(public_key_hex.clone())
         .map_err(|_| StdError::generic_err("Invalid public key hex"))?;
@@ -254,7 +246,7 @@ fn signature_verification(
 
     let message_hash = Sha256::digest(public_key_bytes.clone());
 
-    _deps
+    deps
         .api
         .secp256k1_verify(&message_hash, &signature_bytes, &public_key_bytes)
         .map_err(|e| {
@@ -263,24 +255,24 @@ fn signature_verification(
 }
 
 fn query_workers(
-    _deps: Deps,
-    _signature: String,
-    _sender_public_key: String,
+    deps: Deps,
+    signature: String,
+    sender_public_key: String,
 ) -> StdResult<GetWorkersResponse> {
-    let verify = signature_verification(_deps, _signature, _sender_public_key)?;
+    let verify = signature_verification(deps, signature, sender_public_key)?;
     if !verify {
         return Err(StdError::generic_err("Signature verification failed"));
     }
 
     // let subs = SubscriberStatusQuery {
     //     subscriber_status: SubscriberStatus {
-    //         public_key: _sender_public_key,
+    //         public_key: sender_public_key,
     //     },
     // };
 
     // let query_msg = to_binary(&subs)?;
 
-    // let res: Result<SubscriberStatusResponse, StdError> = _deps.querier.query(
+    // let res: Result<SubscriberStatusResponse, StdError> = deps.querier.query(
     //     &cosmwasm_std::QueryRequest::Wasm(cosmwasm_std::WasmQuery::Smart {
     //         contract_addr: SUBSCRIBER_CONTRACT_ADDRESS.into(),
     //         code_hash: SUBSCRIBER_CONTRACT_CODE_HASH.into(),
@@ -292,7 +284,7 @@ fn query_workers(
     //     Ok(subscriber_status) => {
     //         if subscriber_status.active {
     //             let workers: Vec<_> = WORKERS_MAP
-    //                 .iter(_deps.storage)?
+    //                 .iter(deps.storage)?
     //                 .map(|x| {
     //                     if let Ok((_, worker)) = x {
     //                         Some(worker)
@@ -314,15 +306,8 @@ fn query_workers(
     // }
 
     let workers: Vec<_> = WORKERS_MAP
-        .iter(_deps.storage)?
-        .map(|x| {
-            if let Ok((_, worker)) = x {
-                Some(worker)
-            } else {
-                None
-            }
-        })
-        .filter_map(|x| x)
+        .iter(deps.storage)?
+        .filter_map(|x| x.ok().map(|(_, worker)| worker))
         .collect();
 
     Ok(GetWorkersResponse { workers })
@@ -330,10 +315,10 @@ fn query_workers(
 
 fn query_models(
     _deps: Deps,
-    // _signature: String,
-    // _sender_public_key: String,
+    // signature: String,
+    // sender_public_key: String,
 ) -> StdResult<GetModelsResponse> {
-    // let verify = signature_verification(_deps, _signature, _sender_public_key)?;
+    // let verify = signature_verification(deps, signature, sender_public_key)?;
     // if !verify {
     //     return Err(StdError::generic_err("Signature verification failed"));
     // }
@@ -345,11 +330,11 @@ fn query_models(
 
 fn query_urls(
     _deps: Deps,
-    // _signature: String,
-    // _sender_public_key: String,
+    // signature: String,
+    // sender_public_key: String,
     _model: Option<String>,
 ) -> StdResult<GetURLsResponse> {
-    // let verify = signature_verification(_deps, _signature, _sender_public_key)?;
+    // let verify = signature_verification(deps, signature, sender_public_key)?;
     // if !verify {
     //     return Err(StdError::generic_err("Signature verification failed"));
     // }
@@ -731,6 +716,6 @@ mod tests {
         let res = query(deps.as_ref(), mock_env(), query_msg);
 
         assert!(res.is_ok());
-        dbg!(res);
+        // dbg!(res);
     }
 }
