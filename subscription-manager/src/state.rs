@@ -30,7 +30,9 @@ pub struct Subscriber {
 
 // Structure representing an API key to be stored
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
-pub struct ApiKey {}
+pub struct ApiKey {
+    pub identity: Option<String>, // The optional identity associated with the key
+}
 
 // Function to access and modify the configuration state
 pub fn config(storage: &mut dyn Storage) -> Singleton<State> {

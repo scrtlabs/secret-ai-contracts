@@ -17,10 +17,14 @@ pub enum ExecuteMsg {
     // Message to remove a subscriber using a public key
     RemoveSubscriber { public_key: String },
 
-    // Message to set a new admin for the contract using a public key
-    SetAdmin { public_key: String },
+    // Message to set a new admin for the contract using a public address
+    SetAdmin { public_address: String },
     // Message to add an API key
-    AddApiKey { api_key: String },
+    // Add an API key with an optional identity
+    AddApiKey {
+        api_key: String,
+        identity: Option<String>, // Optional field to associate an API key with an identity
+    },
     // Message to revoke an API key
     RevokeApiKey { api_key: String },
 }
@@ -44,6 +48,10 @@ pub enum QueryMsg {
     ApiKeysWithPermit {
         permit: Permit,
     },
+    ApiKeysByIdentityWithPermit {
+        identity: String,
+        permit: Permit,
+    }
 }
 
 // Struct used to respond to a query about a subscriber's status
@@ -65,4 +73,10 @@ pub struct ApiKeyResponse {
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct GetApiKeysResponse {
     pub api_keys: Vec<ApiKeyResponse>,
+}
+
+// Struct for the response of the `query_by_identity` query
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+pub struct ApiKeysByIdentityResponse {
+    pub api_keys: Vec<String>, // List of API keys associated with the identity
 }
