@@ -8,3 +8,4 @@ permit_to_sign.json
 query_subscriber_permit.json
 api_keys_permit.json
 api_keys_by_identity_permit.json
+/optimized-wasm
