@@ -2,33 +2,32 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use secret_toolkit::permit::Permit;
 
-
-// Struct for the message used to instantiate the contract
+/// Instantiate message for the contract
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {}
 
-// Enum representing the different executable messages that the contract can handle
+/// Execute message enum for the contract
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    // Message to register a new subscriber using a public key
+    /// Register a new subscriber with a public key
     RegisterSubscriber { public_key: String },
-
-    // Message to remove a subscriber using a public key
+    /// Remove an existing subscriber using a public key
     RemoveSubscriber { public_key: String },
-
-    // Message to set a new admin for the contract using a public address
+    /// Set a new admin address for the contract
     SetAdmin { public_address: String },
-    // Message to add an API key
-    // Add an API key with an optional identity
+    /// Add an API key with optional identity, name, and created timestamp
     AddApiKey {
         api_key: String,
-        identity: Option<String>, // Optional field to associate an API key with an identity
+        identity: Option<String>,
+        name: Option<String>,    // optional field: name of the API key
+        created: Option<u64>,    // optional field: creation timestamp
     },
-    // Message to revoke an API key
+    /// Revoke an existing API key
     RevokeApiKey { api_key: String },
 }
 
+/// Migrate message enum for contract migration
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MigrateMsg {
@@ -36,47 +35,54 @@ pub enum MigrateMsg {
     StdError {},
 }
 
-// Enum representing the different query messages that the contract can respond to
+/// Query message enum for the contract
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
+    /// Query subscriber status with permit
     SubscriberStatusWithPermit {
         public_key: String,
         permit: Permit,
     },
+    /// Get the admin address
     GetAdmin {},
-    ApiKeysWithPermit {
-        permit: Permit,
-    },
+    /// Query all API keys with permit (returns hashed API keys)
+    ApiKeysWithPermit { permit: Permit },
+    /// Query API keys by identity with permit (returns API key details)
     ApiKeysByIdentityWithPermit {
         identity: String,
         permit: Permit,
-    }
+    },
 }
 
-// Struct used to respond to a query about a subscriber's status
+/// Response structure for subscriber status query
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct SubscriberStatusResponse {
-    // Indicates if the subscriber is active or not
     pub active: bool,
 }
 
-// Structure for API keys to respond to a query
+/// Response structure for API keys query (hashed keys)
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct ApiKeyResponse {
-    // Previously `key: String`,
-    // Maybe rename to `hash: String` or `hashed_key: String`.
     pub hashed_key: String,
 }
 
-// Structure for GetApiKeysResponse
+/// Response structure for GetApiKeys query
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct GetApiKeysResponse {
     pub api_keys: Vec<ApiKeyResponse>,
 }
 
-// Struct for the response of the `query_by_identity` query
+/// Structure returned in API keys by identity query containing key details
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+pub struct ApiKeyDetail {
+    pub api_key: String,
+    pub name: Option<String>,
+    pub created: Option<u64>,
+}
+
+/// Response structure for API keys by identity query
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct ApiKeysByIdentityResponse {
-    pub api_keys: Vec<String>, // List of API keys associated with the identity
+    pub api_keys: Vec<ApiKeyDetail>,
 }

@@ -1,45 +1,45 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use secret_toolkit::storage::{Keymap};
+use secret_toolkit::storage::Keymap;
 
 use cosmwasm_std::{Addr, Storage};
 use cosmwasm_storage::{singleton, singleton_read, ReadonlySingleton, Singleton};
 
-// Key for accessing the configuration state in storage
+/// Storage key for contract configuration
 pub static CONFIG_KEY: &[u8] = b"config";
 
-// Keymap for storing subscribers' information, using public keys as keys
+/// Keymap for storing subscribers (keyed by public key)
 pub static SB_MAP: Keymap<String, Subscriber> = Keymap::new(b"SB_MAP");
 
-// Keymap for storing API keys
+/// Keymap for storing API keys
 pub static API_KEY_MAP: Keymap<String, ApiKey> = Keymap::new(b"API_KEY_MAP");
 
-// Structure representing the state of the contract
+/// Contract state structure containing the admin address
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct State {
-    // Address of the admin
     pub admin: Addr,
 }
 
-// Structure representing a subscriber's information
+/// Structure representing a subscriber
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct Subscriber {
-    // Status of the subscriber (active or not)
     pub status: bool,
 }
 
-// Structure representing an API key to be stored
+/// Structure representing an API key with additional fields
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct ApiKey {
-    pub identity: Option<String>, // The optional identity associated with the key
+    pub identity: Option<String>,
+    pub name: Option<String>,    // optional name field for the API key
+    pub created: Option<u64>,    // optional creation timestamp
 }
 
-// Function to access and modify the configuration state
+/// Returns a mutable singleton for contract configuration
 pub fn config(storage: &mut dyn Storage) -> Singleton<State> {
     singleton(storage, CONFIG_KEY)
 }
 
-// Function to read the configuration state without modifying it
+/// Returns a read-only singleton for contract configuration
 pub fn config_read(storage: &dyn Storage) -> ReadonlySingleton<State> {
     singleton_read(storage, CONFIG_KEY)
 }
