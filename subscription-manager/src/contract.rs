@@ -71,9 +71,10 @@ pub fn try_add_api_key(
     let state = config_read(deps.storage).load()?;
 
     // Only admin can add API keys
-    if info.sender != state.admin {
-        return Err(StdError::generic_err("Only admin can add API keys"));
-    }
+    // currently disabled for devportal use
+    // if info.sender != state.admin {
+    //     return Err(StdError::generic_err("Only admin can add API keys"));
+    // }
 
     // Check if API key already exists
     if API_KEY_MAP.contains(deps.storage, &api_key) {
@@ -106,9 +107,10 @@ pub fn try_revoke_api_key(
     let state = config_read(deps.storage).load()?;
 
     // Only admin can revoke API keys
-    if info.sender != state.admin {
-        return Err(StdError::generic_err("Only admin can revoke API keys"));
-    }
+    // currently disabled for devportal use
+    // if info.sender != state.admin {
+    //     return Err(StdError::generic_err("Only admin can revoke API keys"));
+    // }
 
     // Check if API key exists
     if !API_KEY_MAP.contains(deps.storage, &api_key) {
