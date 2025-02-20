@@ -29,9 +29,10 @@ pub struct Subscriber {
 /// Structure representing an API key with additional fields
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct ApiKey {
-    pub identity: Option<String>,
-    pub name: Option<String>,    // optional name field for the API key
-    pub created: Option<u64>,    // optional creation timestamp
+    pub identity: String, // Associated identity
+    pub hash: String,     // Hash of the API key
+    pub name: Option<String>,
+    pub created: Option<u64>,
 }
 
 /// Returns a mutable singleton for contract configuration

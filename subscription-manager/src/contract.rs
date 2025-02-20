@@ -4,12 +4,48 @@ use cosmwasm_std::{
 };
 use secret_toolkit::permit::{validate, Permit};
 use sha2::{Digest, Sha256};
-
 use crate::msg::{
     ApiKeyDetail, ApiKeyResponse, ApiKeysByIdentityResponse, ExecuteMsg, GetApiKeysResponse,
     InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatusResponse,
 };
 use crate::state::{config, config_read, ApiKey, State, Subscriber, API_KEY_MAP, SB_MAP};
+
+/// Generates a pseudo-random API key using env.block.random and the provided identity.
+/// Mimics the following JavaScript function:
+/// ```js
+/// const generateApiKey = (): string => {
+///   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
+///   return `sk-${Array.from({ length: 72 }, () => characters.charAt(Math.floor(Math.random() * characters.length))).join('')}`;
+/// };
+/// ```
+/// Instead of Math.random(), it uses the available random seed and the identity.
+fn generate_api_key(random: &[u8], identity: &str, created: u64) -> String {
+    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
+    let mut key = String::from("sk-"); // prefix as in the JS example
+    // Create an initial seed by hashing the random seed with the identity.
+    let mut hasher = Sha256::new();
+    sha2::Digest::update(&mut hasher, random);
+    sha2::Digest::update(&mut hasher, identity.as_bytes());
+    sha2::Digest::update(&mut hasher, created.to_string().as_bytes());
+    let mut seed = hasher.finalize_reset().to_vec();
+
+    // Append characters until key reaches desired length.
+    while key.len() < 75 {
+        for &byte in seed.iter() {
+            if key.len() >= 75 {
+                break;
+            }
+            let idx = (byte as usize) % alphabet.len();
+            let ch = alphabet.chars().nth(idx).unwrap();
+            key.push(ch);
+        }
+        // Update the seed by hashing the current seed.
+        let mut seed_hasher = Sha256::new();
+        sha2::Digest::update(&mut seed_hasher, &seed);
+        seed = seed_hasher.finalize().to_vec();
+    }
+    key
+}
 
 #[entry_point]
 pub fn instantiate(
@@ -18,16 +54,14 @@ pub fn instantiate(
     info: MessageInfo,
     _msg: InstantiateMsg,
 ) -> StdResult<Response> {
-    // Set admin as the sender of the instantiate message
+    // Set the admin as the sender of the instantiate message.
     let state = State {
         admin: info.sender.clone(),
     };
 
-    // Log initialization debug message
     deps.api
         .debug(format!("Contract was initialized by {}", info.sender).as_str());
 
-    // Save state to storage
     config(deps.storage).save(&state)?;
 
     Ok(Response::default())
@@ -48,83 +82,108 @@ pub fn execute(
             try_remove_subscriber(deps, info, public_key)
         }
         ExecuteMsg::SetAdmin { public_address } => try_set_admin(deps, info, public_address),
+        // Note: AddApiKey now generates the key internally.
         ExecuteMsg::AddApiKey {
-            api_key,
             identity,
             name,
             created,
-        } => try_add_api_key(deps, info, api_key, identity, name, created),
+        } => try_add_api_key(deps, env, info, identity, name, created),
         ExecuteMsg::RevokeApiKey { api_key } => try_revoke_api_key(deps, info, api_key),
     }
 }
 
-/// Adds an API key with optional identity, name, and creation timestamp
+/// Adds a new API key for the given identity. The sender must either be the identity owner or the admin.
+/// The API key is generated using env.block.random and the identity. The full API key is returned to
+/// the caller, but only its hash (SHA‑256) is stored in the contract.
 pub fn try_add_api_key(
     deps: DepsMut,
+    env: Env,
     info: MessageInfo,
-    api_key: String,
-    identity: Option<String>,
+    identity: String,
     name: Option<String>,
     created: Option<u64>,
 ) -> StdResult<Response> {
-    // Load current contract state to verify admin privileges
     let state = config_read(deps.storage).load()?;
+    // Verify that the sender is either the identity owner or an admin.
+    if info.sender != Addr::unchecked(identity.clone()) && info.sender != state.admin {
+        return Err(StdError::generic_err(
+            "Sender must be admin or match the identity",
+        ));
+    }
 
-    // Only admin can add API keys
-    // currently disabled for devportal use
-    // if info.sender != state.admin {
-    //     return Err(StdError::generic_err("Only admin can add API keys"));
-    // }
+    // Use env.block.random to generate a pseudo-random API key.
+    let random = env
+        .block
+        .random
+        .ok_or_else(|| StdError::generic_err("Missing random seed"))?;
+    let full_api_key = generate_api_key(random.as_slice(), &identity, created.unwrap_or(0));
+    // Compute the string representation: first 10 characters + "..." + last 3 characters.
+    let str_representation = if full_api_key.len() >= 13 {
+        format!(
+            "{}...{}",
+            &full_api_key[..10],
+            &full_api_key[full_api_key.len() - 3..]
+        )
+    } else {
+        full_api_key.clone()
+    };
 
-    // Check if API key already exists
-    if API_KEY_MAP.contains(deps.storage, &api_key) {
+    // Check if the API key (by its string representation) already exists.
+    if API_KEY_MAP.contains(deps.storage, &str_representation) {
         return Err(StdError::generic_err("API key already exists"));
     }
 
-    // Create a new API key entry with provided details
+    // Compute the hash of the API key to store in the contract.
+    let mut key_hasher = Sha256::new();
+    key_hasher.update(full_api_key.as_bytes());
+    let key_hash = hex::encode(key_hasher.finalize());
+
+    // Create a new API key entry storing only the hash, along with additional details.
     let api_key_data = ApiKey {
-        identity,
+        identity: identity.clone(),
+        hash: key_hash,
         name,
         created,
     };
 
-    // Insert the API key data into storage
     API_KEY_MAP
-        .insert(deps.storage, &api_key, &api_key_data)
+        .insert(deps.storage, &str_representation, &api_key_data)
         .map_err(|err| StdError::generic_err(err.to_string()))?;
 
+    // Return the full API key to the caller.
     Ok(Response::new()
         .add_attribute("action", "add_api_key")
-        .add_attribute("stored_key", api_key))
+        .add_attribute("api_key", full_api_key))
 }
 
-/// Revokes (removes) an existing API key
+/// Revokes (removes) an existing API key. The parameter is the string representation of the API key.
+/// The sender must be either the admin or the owner (matching the stored identity).
 pub fn try_revoke_api_key(
     deps: DepsMut,
     info: MessageInfo,
-    api_key: String,
+    api_key_str: String,
 ) -> StdResult<Response> {
     let state = config_read(deps.storage).load()?;
 
-    // Only admin can revoke API keys
-    // currently disabled for devportal use
-    // if info.sender != state.admin {
-    //     return Err(StdError::generic_err("Only admin can revoke API keys"));
-    // }
+    // Check if the API key exists.
+    let api_key_data = API_KEY_MAP
+        .get(deps.storage, &api_key_str)
+        .ok_or_else(|| StdError::generic_err("API key not found"))?;
 
-    // Check if API key exists
-    if !API_KEY_MAP.contains(deps.storage, &api_key) {
-        return Err(StdError::generic_err("API key not found"));
+    // Verify that the sender is either the admin or the owner of the API key.
+    if info.sender != state.admin && info.sender != Addr::unchecked(api_key_data.identity.clone()) {
+        return Err(StdError::generic_err(
+            "Unauthorized: sender does not own this API key",
+        ));
     }
 
-    // Remove the API key from storage
     API_KEY_MAP
-        .remove(deps.storage, &api_key)
+        .remove(deps.storage, &api_key_str)
         .map_err(|err| StdError::generic_err(err.to_string()))?;
 
     Ok(Response::new()
         .add_attribute("action", "revoke_api_key")
-        .add_attribute("removed_key", api_key))
+        .add_attribute("removed_api_key", api_key_str))
 }
 
 #[entry_point]
@@ -149,7 +208,7 @@ pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response>
     }
 }
 
-/// Registers a subscriber using a public key
+/// Registers a subscriber using a public key.
 pub fn try_register_subscriber(
     deps: DepsMut,
     info: MessageInfo,
@@ -160,7 +219,6 @@ pub fn try_register_subscriber(
         return Err(StdError::generic_err("Only admin can register subscribers"));
     }
 
-    // Check if subscriber already exists
     if SB_MAP.contains(deps.storage, &public_key) {
         return Err(StdError::generic_err("Subscriber already registered"));
     }
@@ -175,7 +233,7 @@ pub fn try_register_subscriber(
         .add_attribute("subscriber", public_key))
 }
 
-/// Removes a subscriber using a public key
+/// Removes a subscriber using a public key.
 pub fn try_remove_subscriber(
     deps: DepsMut,
     info: MessageInfo,
@@ -186,7 +244,6 @@ pub fn try_remove_subscriber(
         return Err(StdError::generic_err("Only admin can remove subscribers"));
     }
 
-    // Check if subscriber exists
     if !SB_MAP.contains(deps.storage, &public_key) {
         return Err(StdError::generic_err("Subscriber not registered"));
     }
@@ -200,7 +257,7 @@ pub fn try_remove_subscriber(
         .add_attribute("subscriber", public_key))
 }
 
-/// Sets a new admin for the contract
+/// Sets a new admin for the contract.
 pub fn try_set_admin(
     deps: DepsMut,
     info: MessageInfo,
@@ -209,17 +266,16 @@ pub fn try_set_admin(
     let mut config = config(deps.storage);
     let mut state = config.load()?;
 
-    // Only current admin can change the admin
     if info.sender != state.admin {
-        return Err(StdError::generic_err("Only the current admin can set a new admin"));
+        return Err(StdError::generic_err(
+            "Only the current admin can set a new admin",
+        ));
     }
 
-    // Validate the new admin address
     let final_address = deps.api.addr_validate(&public_address).map_err(|err| {
         StdError::generic_err(format!("Invalid address: {}", err))
     })?;
 
-    // Update state with new admin address
     state.admin = final_address;
     config.save(&state)?;
 
@@ -244,13 +300,13 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
-/// Returns the current admin address
+/// Returns the current admin address.
 fn get_admin(deps: Deps) -> StdResult<Addr> {
     let state = config_read(deps.storage).load()?;
     Ok(state.admin)
 }
 
-/// Query subscriber status using a permit for authorization
+/// Queries subscriber status using a permit.
 fn query_subscriber_with_permit(
     deps: Deps,
     env: Env,
@@ -260,7 +316,6 @@ fn query_subscriber_with_permit(
     let state = config_read(deps.storage).load()?;
     let admin_addr = state.admin;
 
-    // Validate permit name
     if permit.params.permit_name != "query_subscriber_permit" {
         return Err(StdError::generic_err("Invalid permit name"));
     }
@@ -275,7 +330,6 @@ fn query_subscriber_with_permit(
         Some("secret"),
     )?;
 
-    // Only admin is allowed to query
     if signer_addr != admin_addr {
         return Err(StdError::generic_err("Unauthorized: not the admin"));
     }
@@ -286,7 +340,7 @@ fn query_subscriber_with_permit(
     Ok(SubscriberStatusResponse { active })
 }
 
-/// Query all API keys (returns hashed API keys) using a permit for authorization
+/// Queries all API keys using a permit. The stored hash is returned directly.
 fn query_api_keys_with_permit(
     deps: Deps,
     env: Env,
@@ -295,7 +349,6 @@ fn query_api_keys_with_permit(
     let state = config_read(deps.storage).load()?;
     let admin_addr = state.admin;
 
-    // Validate permit name
     if permit.params.permit_name != "api_keys_permit" {
         return Err(StdError::generic_err("Invalid permit name"));
     }
@@ -311,21 +364,15 @@ fn query_api_keys_with_permit(
         Some("secret"),
     )?;
 
-    // Only admin is allowed to query
     if signer_addr != admin_addr {
         return Err(StdError::generic_err("Unauthorized: not the admin"));
     }
 
-    // Iterate over all API keys, hash the keys, and return their hashed values
     let api_keys: Vec<ApiKeyResponse> = API_KEY_MAP
-        .iter_keys(deps.storage)?
-        .filter_map(|key_result| {
-            if let Ok(api_key) = key_result {
-                let mut hasher = Sha256::new();
-                hasher.update(api_key.as_bytes());
-                let hashed_key = hex::encode(hasher.finalize());
-
-                Some(ApiKeyResponse { hashed_key })
+        .iter(deps.storage)?
+        .filter_map(|result| {
+            if let Ok((_key, data)) = result {
+                Some(ApiKeyResponse { hashed_key: data.hash })
             } else {
                 None
             }
@@ -335,7 +382,7 @@ fn query_api_keys_with_permit(
     Ok(GetApiKeysResponse { api_keys })
 }
 
-/// Query API keys by identity (returns detailed API key information) using a permit for authorization
+/// Queries API keys by identity using a permit.
 fn query_api_keys_by_identity_with_permit(
     deps: Deps,
     env: Env,
@@ -345,7 +392,6 @@ fn query_api_keys_by_identity_with_permit(
     let state = config_read(deps.storage).load()?;
     let admin_addr = state.admin;
 
-    // Validate permit name
     if permit.params.permit_name != "api_keys_by_identity_permit" {
         return Err(StdError::generic_err("Invalid permit name"));
     }
@@ -361,24 +407,20 @@ fn query_api_keys_by_identity_with_permit(
         Some("secret"),
     )?;
 
-    // Only admin is allowed to query
     if signer_addr != admin_addr {
         return Err(StdError::generic_err("Unauthorized: not the admin"));
     }
 
-    // Iterate over all API keys and filter by the provided identity
     let api_keys: Vec<ApiKeyDetail> = API_KEY_MAP
         .iter(deps.storage)?
         .filter_map(|result| {
             if let Ok((key, data)) = result {
-                if let Some(stored_identity) = &data.identity {
-                    if stored_identity == &identity {
-                        return Some(ApiKeyDetail {
-                            api_key: key,
-                            name: data.name,
-                            created: data.created,
-                        });
-                    }
+                if data.identity == identity {
+                    return Some(ApiKeyDetail {
+                        api_key: key, // string representation
+                        name: data.name,
+                        created: data.created,
+                    });
                 }
             }
             None
@@ -393,7 +435,7 @@ mod tests {
     use super::*;
     use cosmwasm_std::testing::*;
     use cosmwasm_std::{
-        attr, from_binary, BlockInfo, Coin, ContractInfo, Timestamp, TransactionInfo, Uint128,
+        attr, from_binary, BlockInfo, Coin, ContractInfo, Timestamp, TransactionInfo, Uint128, Addr,
     };
 
     /// Mocks an environment for permit tests
@@ -422,19 +464,18 @@ mod tests {
     fn test_migrate_clears_api_key_map() {
         let mut deps = mock_dependencies();
 
-        // Initialize contract with admin address
+        // Initialize contract with admin address.
         let info = mock_info("admin", &[]);
         let init_msg = InstantiateMsg {};
         instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
 
-        // Add two API keys
+        // Add two API keys with different identities.
         execute(
             deps.as_mut(),
             mock_env(),
             info.clone(),
             ExecuteMsg::AddApiKey {
-                api_key: "test_key1".to_string(),
-                identity: None,
+                identity: "user1".to_string(),
                 name: None,
                 created: None,
             },
@@ -446,58 +487,57 @@ mod tests {
             mock_env(),
             info.clone(),
             ExecuteMsg::AddApiKey {
-                api_key: "test_key2".to_string(),
-                identity: None,
+                identity: "user2".to_string(),
                 name: None,
                 created: None,
             },
         )
             .unwrap();
 
-        // Ensure two keys are added
+        // Ensure two keys are added.
         let keys: Vec<String> = API_KEY_MAP
             .iter_keys(deps.as_ref().storage)
             .unwrap()
-            .filter_map(|key_result| key_result.ok())
+            .filter_map(|res| res.ok())
             .collect();
         assert_eq!(keys.len(), 2);
 
-        // Migrate (clear) the API key map
+        // Migrate (clear) the API key map.
         migrate(deps.as_mut(), mock_env(), MigrateMsg::Migrate {}).unwrap();
 
-        // Check that API key map is empty
-        let keys_after_migration: Vec<String> = API_KEY_MAP
+        let keys_after: Vec<String> = API_KEY_MAP
             .iter_keys(deps.as_ref().storage)
             .unwrap()
-            .filter_map(|key_result| key_result.ok())
+            .filter_map(|res| res.ok())
             .collect();
-        assert!(keys_after_migration.is_empty());
+        assert!(keys_after.is_empty());
     }
 
     #[test]
     fn test_query_api_keys_with_real_permit() {
         let mut deps = mock_dependencies();
-        let info = mock_info("secret1p55wr2n6f63wyap8g9dckkxmf4wvq73ensxrw4", &[]);
+        let info_for_instantiate = mock_info("secret1p55wr2n6f63wyap8g9dckkxmf4wvq73ensxrw4", &[]);
         let init_msg = InstantiateMsg {};
         let env = mock_env_for_permit();
 
-        instantiate(deps.as_mut(), env.clone(), info.clone(), init_msg).unwrap();
+        instantiate(deps.as_mut(), env.clone(), info_for_instantiate.clone(), init_msg).unwrap();
 
-        // Add a test API key
+        let info = mock_info("user1", &[]);
+
+        // Add a test API key.
         execute(
             deps.as_mut(),
             env.clone(),
             info.clone(),
             ExecuteMsg::AddApiKey {
-                api_key: "test_key1".to_string(),
-                identity: None,
+                identity: "user1".to_string(),
                 name: None,
                 created: None,
             },
         )
             .unwrap();
 
-        // Read a permit from file "./api_keys_permit.json"
+        // Read a permit from file "./api_keys_permit.json".
         let json_data = std::fs::read_to_string("./api_keys_permit.json").unwrap();
         let permit: secret_toolkit::permit::Permit =
             serde_json::from_str(&json_data).expect("Could not parse Permit from JSON");
@@ -517,26 +557,59 @@ mod tests {
     #[test]
     fn revoke_api_key_and_query_with_permit() {
         let mut deps = mock_dependencies();
-        let info = mock_info("secret1p55wr2n6f63wyap8g9dckkxmf4wvq73ensxrw4", &[]);
+        let info_for_instantiate = mock_info("secret1p55wr2n6f63wyap8g9dckkxmf4wvq73ensxrw4", &[]);
         let init_msg = InstantiateMsg {};
         let env = mock_env_for_permit();
 
-        instantiate(deps.as_mut(), env.clone(), info.clone(), init_msg).unwrap();
+        instantiate(deps.as_mut(), env.clone(), info_for_instantiate.clone(), init_msg).unwrap();
 
-        // Add an API key
-        let add_msg = ExecuteMsg::AddApiKey {
-            api_key: "test_api_key".to_string(),
-            identity: None,
-            name: None,
-            created: None,
-        };
-        execute(deps.as_mut(), env.clone(), info.clone(), add_msg).unwrap();
+        let info = mock_info("user1", &[]);
 
-        // Revoke the API key
-        let revoke_msg = ExecuteMsg::RevokeApiKey {
-            api_key: "test_api_key".to_string(),
+        // Add an API key.
+        let add_res = execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            ExecuteMsg::AddApiKey {
+                identity: "user1".to_string(),
+                name: None,
+                created: None,
+            },
+        )
+            .unwrap();
+
+        // Extract the full API key from the response attributes.
+        let full_api_key = add_res
+            .attributes
+            .iter()
+            .find(|attr| attr.key == "api_key")
+            .expect("Missing api_key attribute")
+            .value
+            .clone();
+
+        println!("full_api_key: {}", full_api_key);
+
+        // Compute the string representation: first 10 characters + "..." + last 3 characters.
+        let str_repr = if full_api_key.len() >= 13 {
+            format!(
+                "{}...{}",
+                &full_api_key[..10],
+                &full_api_key[full_api_key.len() - 3..]
+            )
+        } else {
+            full_api_key.clone()
         };
-        execute(deps.as_mut(), env.clone(), info.clone(), revoke_msg).unwrap();
+
+        // Revoke the API key using its string representation.
+        execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            ExecuteMsg::RevokeApiKey {
+                api_key: str_repr.clone(),
+            },
+        )
+            .unwrap();
 
         let json_data = std::fs::read_to_string("./api_keys_permit.json")
             .expect("Failed to read permit.json");
@@ -745,7 +818,7 @@ mod tests {
     #[test]
     fn query_unregistered_subscriber() {
         let mut deps = mock_dependencies();
-        let info = mock_info("secret1p55wr2n6f63wyap8g9dckkxmf4wvq73ensxrw4", &[]);
+        let info = mock_info("user1", &[]);
         let init_msg = InstantiateMsg {};
         let env = mock_env_for_permit();
         instantiate(deps.as_mut(), env.clone(), info, init_msg).unwrap();
@@ -808,14 +881,13 @@ mod tests {
 
         instantiate(deps.as_mut(), env.clone(), info.clone(), init_msg).unwrap();
 
-        // Add API keys with additional fields
+        // Add API keys for different identities.
         execute(
             deps.as_mut(),
             env.clone(),
             info.clone(),
             ExecuteMsg::AddApiKey {
-                api_key: "api_key_1".to_string(),
-                identity: Some("user_123".to_string()),
+                identity: "user_123".to_string(),
                 name: Some("Test Key 1".to_string()),
                 created: Some(1000),
             },
@@ -827,8 +899,7 @@ mod tests {
             env.clone(),
             info.clone(),
             ExecuteMsg::AddApiKey {
-                api_key: "api_key_2".to_string(),
-                identity: Some("user_123".to_string()),
+                identity: "user_123".to_string(),
                 name: Some("Test Key 2".to_string()),
                 created: Some(2000),
             },
@@ -840,8 +911,7 @@ mod tests {
             env.clone(),
             info.clone(),
             ExecuteMsg::AddApiKey {
-                api_key: "api_key_3".to_string(),
-                identity: Some("user_456".to_string()),
+                identity: "user_456".to_string(),
                 name: Some("Other Key".to_string()),
                 created: Some(3000),
             },
@@ -860,23 +930,16 @@ mod tests {
         let bin = query(deps.as_ref(), env.clone(), query_msg).unwrap();
         let response: ApiKeysByIdentityResponse = from_binary(&bin).unwrap();
 
-        // Verify that only the keys belonging to "user_123" are returned with correct details
+        // Verify that only keys belonging to "user_123" are returned.
         assert_eq!(response.api_keys.len(), 2);
-        let key1 = response
-            .api_keys
-            .iter()
-            .find(|x| x.api_key == "api_key_1")
-            .expect("Missing api_key_1");
-        assert_eq!(key1.name, Some("Test Key 1".to_string()));
-        assert_eq!(key1.created, Some(1000));
-
-        let key2 = response
-            .api_keys
-            .iter()
-            .find(|x| x.api_key == "api_key_2")
-            .expect("Missing api_key_2");
-        assert_eq!(key2.name, Some("Test Key 2".to_string()));
-        assert_eq!(key2.created, Some(2000));
+        for key_detail in response.api_keys {
+            assert!(!key_detail.api_key.is_empty());
+            match key_detail.name.as_deref() {
+                Some("Test Key 1") => assert_eq!(key_detail.created, Some(1000)),
+                Some("Test Key 2") => assert_eq!(key_detail.created, Some(2000)),
+                _ => panic!("Unexpected key detail returned"),
+            }
+        }
     }
 
     #[test]
@@ -888,14 +951,13 @@ mod tests {
 
         instantiate(deps.as_mut(), env.clone(), info.clone(), init_msg).unwrap();
 
-        // Add API keys with and without identity
+        // Add API keys for specific identities.
         execute(
             deps.as_mut(),
             env.clone(),
             info.clone(),
             ExecuteMsg::AddApiKey {
-                api_key: "api_key_1".to_string(),
-                identity: Some("user_123".to_string()),
+                identity: "user_123".to_string(),
                 name: Some("Key 1".to_string()),
                 created: Some(1000),
             },
@@ -907,47 +969,19 @@ mod tests {
             env.clone(),
             info.clone(),
             ExecuteMsg::AddApiKey {
-                api_key: "api_key_2".to_string(),
-                identity: Some("user_456".to_string()),
+                identity: "user_456".to_string(),
                 name: Some("Key 2".to_string()),
                 created: Some(2000),
             },
         )
             .unwrap();
 
-        // API keys without identity
-        execute(
-            deps.as_mut(),
-            env.clone(),
-            info.clone(),
-            ExecuteMsg::AddApiKey {
-                api_key: "api_key_3".to_string(),
-                identity: None,
-                name: None,
-                created: None,
-            },
-        )
-            .unwrap();
-
-        execute(
-            deps.as_mut(),
-            env.clone(),
-            info.clone(),
-            ExecuteMsg::AddApiKey {
-                api_key: "api_key_4".to_string(),
-                identity: None,
-                name: None,
-                created: None,
-            },
-        )
-            .unwrap();
-
+        // Query with an empty identity should return an empty result.
         let json_data = std::fs::read_to_string("./api_keys_by_identity_permit.json")
             .expect("Failed to read permit.json");
         let permit: secret_toolkit::permit::Permit =
             serde_json::from_str(&json_data).expect("Could not parse Permit from JSON");
 
-        // Query with an empty identity should return an empty result
         let query_msg = QueryMsg::ApiKeysByIdentityWithPermit {
             identity: "".to_string(),
             permit,

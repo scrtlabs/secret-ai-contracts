@@ -10,20 +10,15 @@ pub struct InstantiateMsg {}
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    /// Register a new subscriber with a public key
     RegisterSubscriber { public_key: String },
-    /// Remove an existing subscriber using a public key
     RemoveSubscriber { public_key: String },
-    /// Set a new admin address for the contract
     SetAdmin { public_address: String },
-    /// Add an API key with optional identity, name, and created timestamp
+    // The AddApiKey message now only requires identity, name, and created.
     AddApiKey {
-        api_key: String,
-        identity: Option<String>,
-        name: Option<String>,    // optional field: name of the API key
-        created: Option<u64>,    // optional field: creation timestamp
+        identity: String,
+        name: Option<String>,
+        created: Option<u64>,
     },
-    /// Revoke an existing API key
     RevokeApiKey { api_key: String },
 }
 
