@@ -12,7 +12,7 @@ pub static CONFIG_KEY: &[u8] = b"config";
 pub static SB_MAP: Keymap<String, Subscriber> = Keymap::new(b"SB_MAP");
 
 /// Keymap for storing API keys
-pub static API_KEY_MAP: Keymap<String, ApiKey> = Keymap::new(b"API_KEY_MAP");
+pub static API_KEY_MAP: Keymap<String, ApiKey> = Keymap::new(b"API_KEY_MAP_NEW");
 
 /// Contract state structure containing the admin address
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]

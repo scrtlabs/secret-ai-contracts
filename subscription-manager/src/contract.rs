@@ -1,8 +1,9 @@
-use cosmwasm_std::{
-    entry_point, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError,
-    StdResult,
-};
+use cosmwasm_std::{entry_point, from_binary, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult};
+use cosmwasm_storage::Bucket;
+use schemars::JsonSchema;
 use secret_toolkit::permit::{validate, Permit};
+use secret_toolkit::storage::Keymap;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use crate::msg::{
     ApiKeyDetail, ApiKeyResponse, ApiKeysByIdentityResponse, ExecuteMsg, GetApiKeysResponse,
@@ -186,23 +187,80 @@ pub fn try_revoke_api_key(
         .add_attribute("removed_api_key", api_key_str))
 }
 
+/// Old API key structure (old format)
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct OldApiKey {
+    pub identity: Option<String>,
+    pub name: Option<String>,
+    pub created: Option<u64>,
+}
+
+/// Define a keymap for the old API keys using the same prefix as originally used.
+pub static OLD_API_KEY_MAP: Keymap<String, OldApiKey> = Keymap::new(b"API_KEY_MAP");
+
+/// Migration function to transfer API keys from the old format to the new format.
+///
+/// The old data are stored in OLD_API_KEY_MAP (prefix b"API_KEY_MAP") as OldApiKey.
+/// The new format uses ApiKey, and the key in storage is the string representation
+/// (first 10 characters + "..." + last 3 characters) of the full API key.
+/// For each old entry:
+///   1. Compute the new key (string representation) from the old key.
+///   2. Compute the SHA‑256 hash of the old full API key.
+///   3. Create a new ApiKey with:
+///      - identity: taken from the old data (or an empty string if missing),
+///      - hash: computed hash,
+///      - name and created: carried over.
+///   4. Insert the new record into NEW_API_KEY_MAP.
+///   5. Remove the entry from OLD_API_KEY_MAP.
 #[entry_point]
 pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response> {
     match msg {
         MigrateMsg::Migrate {} => {
-            // // Iterate through all API keys and remove them
-            // let keys_to_remove: Vec<String> = API_KEY_MAP
-            //     .iter_keys(deps.storage)?
-            //     .filter_map(|key_result| key_result.ok())
-            //     .collect();
-            //
-            // for key in keys_to_remove {
-            //     API_KEY_MAP.remove(deps.storage, &key)?;
-            // }
+            // Step 1: Collect all old API key entries from OLD_API_KEY_MAP.
+            let mut old_entries: Vec<(String, OldApiKey)> = Vec::new();
+            for item in OLD_API_KEY_MAP.iter(deps.storage)? {
+                let (raw_key, old_api) = item?;
+                old_entries.push((raw_key, old_api));
+            }
+
+            // Step 2: For each old entry, convert and insert into NEW_API_KEY_MAP.
+            for (old_full_key, old_data) in old_entries.iter() {
+                // Compute new key: if old_full_key length is >= 13,
+                // then new key = first 10 chars + "..." + last 3 chars;
+                // otherwise, use the full key.
+                let new_key = if old_full_key.len() >= 13 {
+                    format!("{}...{}", &old_full_key[..10], &old_full_key[old_full_key.len()-3..])
+                } else {
+                    old_full_key.clone()
+                };
+
+                // Compute the SHA-256 hash of the old full API key.
+                let mut key_hasher = Sha256::new();
+                key_hasher.update(old_full_key.as_bytes());
+                let new_hash = hex::encode(key_hasher.finalize());
+
+                // Use the old identity if available; otherwise, default to an empty string.
+                let new_identity = old_data.identity.clone().unwrap_or_else(|| "".to_string());
+
+                // Create the new ApiKey structure.
+                let new_api_key = ApiKey {
+                    identity: new_identity,
+                    hash: new_hash,
+                    name: old_data.name.clone(),
+                    created: old_data.created,
+                };
+
+                // Insert the new record into NEW_API_KEY_MAP.
+                API_KEY_MAP.insert(deps.storage, &new_key, &new_api_key)
+                    .map_err(|err| StdError::generic_err(err.to_string()))?;
+
+                // Step 3: Remove the migrated entry from OLD_API_KEY_MAP.
+                OLD_API_KEY_MAP.remove(deps.storage, old_full_key)?;
+            }
 
             Ok(Response::new()
                 .add_attribute("action", "migrate")
-                .add_attribute("status", "api_key_map_cleared"))
+                .add_attribute("status", "migrated from OLD_API_KEY_MAP to NEW_API_KEY_MAP"))
         }
         MigrateMsg::StdError {} => Err(StdError::generic_err("this is an std error")),
     }
