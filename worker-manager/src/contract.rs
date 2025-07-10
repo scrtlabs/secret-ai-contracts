@@ -264,21 +264,21 @@ fn query_workers(
         return Err(StdError::generic_err("Signature verification failed"));
     }
 
-    let subs = SubscriberStatusQuery {
-        subscriber_status: SubscriberStatus {
-            public_key: sender_public_key,
-        },
-    };
+    // let subs = SubscriberStatusQuery {
+    //     subscriber_status: SubscriberStatus {
+    //         public_key: sender_public_key,
+    //     },
+    // };
 
-    let query_msg = to_binary(&subs)?;
+    // let query_msg = to_binary(&subs)?;
 
-    let res: Result<SubscriberStatusResponse, StdError> = deps.querier.query(
-        &cosmwasm_std::QueryRequest::Wasm(cosmwasm_std::WasmQuery::Smart {
-            contract_addr: SUBSCRIBER_CONTRACT_ADDRESS.into(),
-            code_hash: SUBSCRIBER_CONTRACT_CODE_HASH.into(),
-            msg: query_msg,
-        }),
-    );
+    // let res: Result<SubscriberStatusResponse, StdError> = deps.querier.query(
+    //     &cosmwasm_std::QueryRequest::Wasm(cosmwasm_std::WasmQuery::Smart {
+    //         contract_addr: SUBSCRIBER_CONTRACT_ADDRESS.into(),
+    //         code_hash: SUBSCRIBER_CONTRACT_CODE_HASH.into(),
+    //         msg: query_msg,
+    //     }),
+    // );
 
     // match res {
     //     Ok(subscriber_status) => {
@@ -324,7 +324,7 @@ fn query_models(
     // }
 
     Ok(GetModelsResponse {
-        models: vec!["deepseek-r1:70b".into()],
+        models: vec!["deepseek-r1:70b".into(), "llama3.2-vision".into(), "gemma3:4b".into()],
     })
 }
 
@@ -340,7 +340,8 @@ fn query_urls(
     // }
 
     Ok(GetURLsResponse {
-        urls: vec!["https://ai1.scrtlabs.com:21434".into()],
+        // urls: vec!["https://secretai-zqtr.scrtlabs.com:21434".into()],
+        urls: vec!["https://secretai-rytn.scrtlabs.com:21434".into()],
     })
 }
 
