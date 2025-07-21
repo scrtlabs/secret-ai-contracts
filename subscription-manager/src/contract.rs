@@ -5,10 +5,7 @@ use secret_toolkit::permit::{validate, Permit};
 use secret_toolkit::storage::Keymap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use crate::msg::{
-    ApiKeyDetail, ApiKeyResponse, ApiKeysByIdentityResponse, ExecuteMsg, GetApiKeysResponse,
-    InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatusResponse,
-};
+use crate::msg::{ApiKeyDetail, ApiKeyResponse, ApiKeysByIdentityResponse, ExecuteMsg, GetApiKeysResponse, IdentityResponse, InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatusResponse};
 use crate::state::{config, config_read, ApiKey, State, Subscriber, API_KEY_MAP, SB_MAP};
 
 /// Generates a pseudo-random API key using env.block.random and the provided identity.
@@ -216,51 +213,51 @@ pub static OLD_API_KEY_MAP: Keymap<String, OldApiKey> = Keymap::new(b"API_KEY_MA
 pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response> {
     match msg {
         MigrateMsg::Migrate {} => {
-            // Step 1: Collect all old API key entries from OLD_API_KEY_MAP.
-            let mut old_entries: Vec<(String, OldApiKey)> = Vec::new();
-            for item in OLD_API_KEY_MAP.iter(deps.storage)? {
-                let (raw_key, old_api) = item?;
-                old_entries.push((raw_key, old_api));
-            }
-
-            // Step 2: For each old entry, convert and insert into NEW_API_KEY_MAP.
-            for (old_full_key, old_data) in old_entries.iter() {
-                // Compute new key: if old_full_key length is >= 13,
-                // then new key = first 10 chars + "..." + last 3 chars;
-                // otherwise, use the full key.
-                let new_key = if old_full_key.len() >= 13 {
-                    format!("{}...{}", &old_full_key[..10], &old_full_key[old_full_key.len()-3..])
-                } else {
-                    old_full_key.clone()
-                };
-
-                // Compute the SHA-256 hash of the old full API key.
-                let mut key_hasher = Sha256::new();
-                key_hasher.update(old_full_key.as_bytes());
-                let new_hash = hex::encode(key_hasher.finalize());
-
-                // Use the old identity if available; otherwise, default to an empty string.
-                let new_identity = old_data.identity.clone().unwrap_or_else(|| "".to_string());
-
-                // Create the new ApiKey structure.
-                let new_api_key = ApiKey {
-                    identity: new_identity,
-                    hash: new_hash,
-                    name: old_data.name.clone(),
-                    created: old_data.created,
-                };
-
-                // Insert the new record into NEW_API_KEY_MAP.
-                API_KEY_MAP.insert(deps.storage, &new_key, &new_api_key)
-                    .map_err(|err| StdError::generic_err(err.to_string()))?;
-
-                // Step 3: Remove the migrated entry from OLD_API_KEY_MAP.
-                OLD_API_KEY_MAP.remove(deps.storage, old_full_key)?;
-            }
-
+            // // Step 1: Collect all old API key entries from OLD_API_KEY_MAP.
+            // let mut old_entries: Vec<(String, OldApiKey)> = Vec::new();
+            // for item in OLD_API_KEY_MAP.iter(deps.storage)? {
+            //     let (raw_key, old_api) = item?;
+            //     old_entries.push((raw_key, old_api));
+            // }
+            //
+            // // Step 2: For each old entry, convert and insert into NEW_API_KEY_MAP.
+            // for (old_full_key, old_data) in old_entries.iter() {
+            //     // Compute new key: if old_full_key length is >= 13,
+            //     // then new key = first 10 chars + "..." + last 3 chars;
+            //     // otherwise, use the full key.
+            //     let new_key = if old_full_key.len() >= 13 {
+            //         format!("{}...{}", &old_full_key[..10], &old_full_key[old_full_key.len()-3..])
+            //     } else {
+            //         old_full_key.clone()
+            //     };
+            //
+            //     // Compute the SHA-256 hash of the old full API key.
+            //     let mut key_hasher = Sha256::new();
+            //     key_hasher.update(old_full_key.as_bytes());
+            //     let new_hash = hex::encode(key_hasher.finalize());
+            //
+            //     // Use the old identity if available; otherwise, default to an empty string.
+            //     let new_identity = old_data.identity.clone().unwrap_or_else(|| "".to_string());
+            //
+            //     // Create the new ApiKey structure.
+            //     let new_api_key = ApiKey {
+            //         identity: new_identity,
+            //         hash: new_hash,
+            //         name: old_data.name.clone(),
+            //         created: old_data.created,
+            //     };
+            //
+            //     // Insert the new record into NEW_API_KEY_MAP.
+            //     API_KEY_MAP.insert(deps.storage, &new_key, &new_api_key)
+            //         .map_err(|err| StdError::generic_err(err.to_string()))?;
+            //
+            //     // Step 3: Remove the migrated entry from OLD_API_KEY_MAP.
+            //     OLD_API_KEY_MAP.remove(deps.storage, old_full_key)?;
+            // }
+            //
             Ok(Response::new()
-                .add_attribute("action", "migrate")
-                .add_attribute("status", "migrated from OLD_API_KEY_MAP to NEW_API_KEY_MAP"))
+                .add_attribute("action", "migrate"))
+                // .add_attribute("status", "migrated from OLD_API_KEY_MAP to NEW_API_KEY_MAP"))
         }
         MigrateMsg::StdError {} => Err(StdError::generic_err("this is an std error")),
     }
@@ -351,11 +348,38 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::GetAdmin {} => to_binary(&get_admin(deps)?),
         QueryMsg::ApiKeysWithPermit { permit } => {
             to_binary(&query_api_keys_with_permit(deps, env, permit)?)
-        }
+        },
         QueryMsg::ApiKeysByIdentityWithPermit { identity, permit } => {
             to_binary(&query_api_keys_by_identity_with_permit(deps, env, identity, permit)?)
-        }
+        },
+        QueryMsg::QueryIdentityByApiKey { api_key } =>
+            to_binary(&query_identity_by_api_key(deps, api_key)?)
     }
+}
+
+/// Look up the identity associated with a full API key
+fn query_identity_by_api_key(deps: Deps, full_api_key: String) -> StdResult<IdentityResponse> {
+    // Derive the storage key (string representation)
+    let str_repr = if full_api_key.len() >= 13 {
+        format!("{}...{}", &full_api_key[..10], &full_api_key[full_api_key.len()-3..])
+    } else {
+        full_api_key.clone()
+    };
+
+    // Fetch stored API key data
+    let api_key_data = API_KEY_MAP
+        .get(deps.storage, &str_repr)
+        .ok_or_else(|| StdError::generic_err("API key not found"))?;
+
+    // Hash the provided full key and compare
+    let mut hasher = Sha256::new();
+    hasher.update(full_api_key.as_bytes());
+    let provided_hash = hex::encode(hasher.finalize());
+
+    if provided_hash != api_key_data.hash {
+        return Err(StdError::generic_err("Invalid API key"));
+    }
+    Ok(IdentityResponse { identity: api_key_data.identity })
 }
 
 /// Returns the current admin address.
@@ -1048,5 +1072,51 @@ mod tests {
         let response: ApiKeysByIdentityResponse = from_binary(&bin).unwrap();
 
         assert_eq!(response.api_keys.len(), 0);
+    }
+
+    #[test]
+    fn query_identity_by_api_key_success() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let info = mock_info("admin", &[]);
+        instantiate(deps.as_mut(), env.clone(), info.clone(), InstantiateMsg {}).unwrap();
+        // Add a key for user1
+        let exec_res = execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            ExecuteMsg::AddApiKey { identity: "user1".to_string(), name: None, created: None },
+        ).unwrap();
+        // Extract full API key
+        let full_key = exec_res.attributes
+            .iter()
+            .find(|a| a.key == "api_key").unwrap()
+            .value.clone();
+
+        println!("Full key: {}", full_key);
+
+        // Query by that key
+        let bin = query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::QueryIdentityByApiKey { api_key: full_key.clone() }
+        ).unwrap();
+        let resp: IdentityResponse = from_binary(&bin).unwrap();
+        assert_eq!(resp.identity, "user1");
+    }
+
+    #[test]
+    fn query_identity_by_api_key_not_found_or_invalid() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let info = mock_info("admin", &[]);
+        instantiate(deps.as_mut(), env.clone(), info.clone(), InstantiateMsg {}).unwrap();
+        // No key added, using arbitrary key
+        let res = query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::QueryIdentityByApiKey { api_key: "sk-invalid-key".to_string() }
+        );
+        assert!(res.is_err());
     }
 }

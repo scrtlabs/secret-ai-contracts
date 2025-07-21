@@ -48,6 +48,8 @@ pub enum QueryMsg {
         identity: String,
         permit: Permit,
     },
+    /// Query identity by API key
+    QueryIdentityByApiKey { api_key: String },
 }
 
 /// Response structure for subscriber status query
@@ -66,6 +68,12 @@ pub struct ApiKeyResponse {
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct GetApiKeysResponse {
     pub api_keys: Vec<ApiKeyResponse>,
+}
+
+/// Response for querying identity by full API key
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct IdentityResponse {
+    pub identity: String,
 }
 
 /// Structure returned in API keys by identity query containing key details
