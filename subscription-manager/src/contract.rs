@@ -353,8 +353,22 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             to_binary(&query_api_keys_by_identity_with_permit(deps, env, identity, permit)?)
         },
         QueryMsg::QueryIdentityByApiKey { api_key } =>
-            to_binary(&query_identity_by_api_key(deps, api_key)?)
+            to_binary(&query_identity_by_api_key(deps, api_key)?),
+        QueryMsg::QueryIdentityByApiKeyHash { api_key_hash } =>
+            to_binary(&query_identity_by_api_key_hash(deps, api_key_hash)?),
     }
+}
+
+/// Look up the identity associated with a hashed API key
+fn query_identity_by_api_key_hash(deps: Deps, api_key_hash: String) -> StdResult<IdentityResponse> {
+    // Search through map entries
+    for entry in API_KEY_MAP.iter(deps.storage)? {
+        let (_key_str, data) = entry?;
+        if data.hash == api_key_hash {
+            return Ok(IdentityResponse { identity: data.identity.clone() });
+        }
+    }
+    Err(StdError::generic_err("API key hash not found"))
 }
 
 /// Look up the identity associated with a full API key
@@ -1116,6 +1130,50 @@ mod tests {
             deps.as_ref(),
             env.clone(),
             QueryMsg::QueryIdentityByApiKey { api_key: "sk-invalid-key".to_string() }
+        );
+        assert!(res.is_err());
+    }
+    #[test]
+    fn query_identity_by_api_key_hash_success() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let info = mock_info("admin", &[]);
+        instantiate(deps.as_mut(), env.clone(), info.clone(), InstantiateMsg {}).unwrap();
+        // Add an API key for user_hash
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            ExecuteMsg::AddApiKey { identity: "user_hash".to_string(), name: None, created: None },
+        ).unwrap();
+        // Extract full key
+        let full = res.attributes.iter().find(|a| a.key=="api_key").unwrap().value.clone();
+        // Compute hash
+        let mut hasher = Sha256::new();
+        hasher.update(full.as_bytes());
+        let hash = hex::encode(hasher.finalize());
+
+        // Query by hash
+        let bin = query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::QueryIdentityByApiKeyHash { api_key_hash: hash.clone() }
+        ).unwrap();
+        let resp: IdentityResponse = from_binary(&bin).unwrap();
+        assert_eq!(resp.identity, "user_hash");
+    }
+
+    #[test]
+    fn query_identity_by_api_key_hash_not_found() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let info = mock_info("admin", &[]);
+        instantiate(deps.as_mut(), env.clone(), info.clone(), InstantiateMsg {}).unwrap();
+        // Query arbitrary hash
+        let res = query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::QueryIdentityByApiKeyHash { api_key_hash: "deadbeef".to_string() }
         );
         assert!(res.is_err());
     }

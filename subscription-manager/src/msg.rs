@@ -50,6 +50,7 @@ pub enum QueryMsg {
     },
     /// Query identity by API key
     QueryIdentityByApiKey { api_key: String },
+    QueryIdentityByApiKeyHash { api_key_hash: String }
 }
 
 /// Response structure for subscriber status query
