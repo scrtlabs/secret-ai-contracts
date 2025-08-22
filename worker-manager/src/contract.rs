@@ -324,7 +324,7 @@ fn query_models(
     // }
 
     Ok(GetModelsResponse {
-        models: vec!["deepseek-r1:70b".into(), "llama3.2-vision".into(), "gemma3:4b".into()],
+        models: vec!["deepseek-r1:70b".into(), "llama3.2-vision".into(), "gemma3:4b".into(), "stt-whisper".into(),"tts-kokoro".into()],
     })
 }
 
@@ -332,17 +332,36 @@ fn query_urls(
     _deps: Deps,
     // signature: String,
     // sender_public_key: String,
-    _model: Option<String>,
+    model: Option<String>,
 ) -> StdResult<GetURLsResponse> {
     // let verify = signature_verification(deps, signature, sender_public_key)?;
     // if !verify {
     //     return Err(StdError::generic_err("Signature verification failed"));
     // }
 
-    Ok(GetURLsResponse {
-        // urls: vec!["https://secretai-zqtr.scrtlabs.com:21434".into()],
-        urls: vec!["https://secretai-rytn.scrtlabs.com:21434".into()],
-    })
+    let urls = match model.as_deref() {
+        // LLM models
+        Some("deepseek-r1:70b") | Some("gemma3:4b") | Some("llama3.2-vision") => {
+            vec!["https://secretai-rytn.scrtlabs.com:21434".into()]
+        }
+
+        // Speech-to-text
+        Some("stt-whisper") => {
+            vec!["https://secreatai-rytn.scrtlabs.com:25436".into()]
+        }
+
+        // Text-to-speech
+        Some("tts-kokoro") => {
+            vec!["https://secretai-rytn.scrtlabs.com:25435".into()]
+        }
+
+        // Default → no urls
+        _ => {
+            vec![]
+        }
+    };
+
+    Ok(GetURLsResponse { urls })
 }
 
 fn query_liveliness_challenge(_deps: Deps) -> StdResult<GetLivelinessChallengeResponse> {
