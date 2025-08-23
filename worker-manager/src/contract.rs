@@ -347,7 +347,7 @@ fn query_urls(
 
         // Speech-to-text
         Some("stt-whisper") => {
-            vec!["https://secreatai-rytn.scrtlabs.com:25436".into()]
+            vec!["https://secretai-rytn.scrtlabs.com:25436".into()]
         }
 
         // Text-to-speech
