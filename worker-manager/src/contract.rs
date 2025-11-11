@@ -324,7 +324,7 @@ fn query_models(
     // }
 
     Ok(GetModelsResponse {
-        models: vec!["deepseek-r1:70b".into(), "llama3.2-vision".into(), "gemma3:4b".into(), "stt-whisper".into(),"tts-kokoro".into()],
+        models: vec!["deepseek-r1:70b".into(), "llama3.2-vision".into(), "gemma3:4b".into(), "stt-whisper".into(),"tts-kokoro".into(), "solidity-llm".into()],
     })
 }
 
@@ -353,6 +353,11 @@ fn query_urls(
         // Text-to-speech
         Some("tts-kokoro") => {
             vec!["https://secretai-rytn.scrtlabs.com:25435".into()]
+        }
+
+        // Solidity-LLM
+        Some("solidity-llm") => {
+            vec!["https://secretai-rytn.scrtlabs.com:18880".into()]
         }
 
         // Default → no urls
