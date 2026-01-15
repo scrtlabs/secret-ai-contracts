@@ -324,7 +324,7 @@ fn query_models(
     // }
 
     Ok(GetModelsResponse {
-        models: vec!["deepseek-r1:70b".into(), "llama3.2-vision".into(), "gemma3:4b".into(), "stt-whisper".into(),"tts-kokoro".into(), "solidity-llm".into()],
+        models: vec!["deepseek-r1:70b".into(), "llama3.2-vision".into(), "gemma3:4b".into(), "stt-whisper".into(),"tts-kokoro".into(), "solidity-llm".into(), "qwen3:8b".into()],
     })
 }
 
@@ -341,7 +341,7 @@ fn query_urls(
 
     let urls = match model.as_deref() {
         // LLM models
-        Some("deepseek-r1:70b") | Some("gemma3:4b") | Some("llama3.2-vision") => {
+        Some("deepseek-r1:70b") | Some("gemma3:4b") | Some("llama3.2-vision") | Some("qwen3:8b") => {
             vec!["https://secretai-rytn.scrtlabs.com:21434".into()]
         }
 
