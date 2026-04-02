@@ -11,7 +11,7 @@ test: unit-test
 
 .PHONY: unit-test
 unit-test:
-	cargo unit-test
+	cargo nextest run --lib
 
 # This is a local build with debug-prints activated. Debug prints only show up
 # in the local development chain (see the `start-server` command below)

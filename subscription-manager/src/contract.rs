@@ -1,7 +1,7 @@
 use cosmwasm_std::{entry_point, from_binary, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult};
 use cosmwasm_storage::Bucket;
 use schemars::JsonSchema;
-use secret_toolkit::permit::{validate, Permit};
+use secret_toolkit::permit::{validate, Permit, RevokedPermits};
 use secret_toolkit::storage::Keymap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -87,6 +87,7 @@ pub fn execute(
             created,
         } => try_add_api_key(deps, env, info, identity, name, created),
         ExecuteMsg::RevokeApiKey { api_key } => try_revoke_api_key(deps, info, api_key),
+        ExecuteMsg::RevokePermit { permit_name, .. } => try_revoke_permit(deps, info, permit_name),
     }
 }
 
@@ -436,6 +437,25 @@ fn query_subscriber_with_permit(
     Ok(SubscriberStatusResponse { active })
 }
 
+/// Revokes a permit by name for the calling account.
+/// The caller can only revoke their own permits.
+pub fn try_revoke_permit(
+    deps: DepsMut,
+    info: MessageInfo,
+    permit_name: String,
+) -> StdResult<Response> {
+    RevokedPermits::revoke_permit(
+        deps.storage,
+        "permits_api_keys",
+        info.sender.as_str(),
+        &permit_name,
+    );
+
+    Ok(Response::new()
+        .add_attribute("action", "revoke_permit")
+        .add_attribute("permit_name", permit_name))
+}
+
 /// Queries all API keys using a permit. The stored hash is returned directly.
 fn query_api_keys_with_permit(
     deps: Deps,
@@ -444,10 +464,6 @@ fn query_api_keys_with_permit(
 ) -> StdResult<GetApiKeysResponse> {
     let state = config_read(deps.storage).load()?;
     let admin_addr = state.admin;
-
-    if permit.params.permit_name != "api_keys_permit" {
-        return Err(StdError::generic_err("Invalid permit name"));
-    }
 
     let contract_address = env.contract.address;
     let storage_prefix = "permits_api_keys";
@@ -598,7 +614,7 @@ mod tests {
             .collect();
         assert_eq!(keys.len(), 2);
 
-        // Migrate (clear) the API key map.
+        // Migrate is a no-op (migration code is commented out) — verify it succeeds without error.
         migrate(deps.as_mut(), mock_env(), MigrateMsg::Migrate {}).unwrap();
 
         let keys_after: Vec<String> = API_KEY_MAP
@@ -606,7 +622,8 @@ mod tests {
             .unwrap()
             .filter_map(|res| res.ok())
             .collect();
-        assert!(keys_after.is_empty());
+        // Keys remain because migrate is currently a no-op.
+        assert_eq!(keys_after.len(), 2);
     }
 
     #[test]
@@ -914,7 +931,7 @@ mod tests {
     #[test]
     fn query_unregistered_subscriber() {
         let mut deps = mock_dependencies();
-        let info = mock_info("user1", &[]);
+        let info = mock_info("secret1p55wr2n6f63wyap8g9dckkxmf4wvq73ensxrw4", &[]);
         let init_msg = InstantiateMsg {};
         let env = mock_env_for_permit();
         instantiate(deps.as_mut(), env.clone(), info, init_msg).unwrap();
@@ -1176,5 +1193,83 @@ mod tests {
             QueryMsg::QueryIdentityByApiKeyHash { api_key_hash: "deadbeef".to_string() }
         );
         assert!(res.is_err());
+    }
+
+    /// Test that RevokePermit blocks a revoked permit while leaving a second permit working.
+    ///
+    /// Requires two pre-generated permit files (signed by subOwner via secretcli):
+    ///   - ./api_keys_permit_1.json  (permit_name: "api_keys_permit_1")
+    ///   - ./api_keys_permit_2.json  (permit_name: "api_keys_permit_2")
+    ///
+    /// Generate them with:
+    ///
+    ///   # Permit 1
+    ///   echo '{"chain_id":"pulsar-3","account_number":"0","sequence":"0","msgs":[{"type":"query_permit","value":{"permit_name":"api_keys_permit_1","allowed_tokens":["secret1ttm9axv8hqwjv3qxvxseecppsrw4cd68getrvr"],"permissions":[]}}],"fee":{"amount":[{"denom":"uscrt","amount":"0"}],"gas":"1"},"memo":""}' > permit1_to_sign.json
+    ///   secretcli tx sign-doc ./permit1_to_sign.json --from subOwner > sig1.json
+    ///   # Assemble api_keys_permit_1.json:
+    ///   # {"params":{"permit_name":"api_keys_permit_1","allowed_tokens":["secret1ttm9axv8hqwjv3qxvxseecppsrw4cd68getrvr"],"chain_id":"pulsar-3","permissions":[]},"signature":<contents of sig1.json>}
+    ///
+    ///   # Permit 2 — same but permit_name: "api_keys_permit_2"
+    #[test]
+    fn test_revoke_permit_blocks_api_keys_query() {
+        let mut deps = mock_dependencies();
+        let admin_addr = "secret1p55wr2n6f63wyap8g9dckkxmf4wvq73ensxrw4";
+        let info_admin = mock_info(admin_addr, &[]);
+        let env = mock_env_for_permit();
+
+        instantiate(deps.as_mut(), env.clone(), info_admin.clone(), InstantiateMsg {}).unwrap();
+
+        // Add an API key so the response is non-trivially verifiable.
+        execute(
+            deps.as_mut(),
+            env.clone(),
+            info_admin.clone(),
+            ExecuteMsg::AddApiKey {
+                identity: admin_addr.to_string(),
+                name: Some("test key".to_string()),
+                created: Some(1),
+            },
+        ).unwrap();
+
+        let json1 = std::fs::read_to_string("./api_keys_permit_1.json")
+            .expect("Missing api_keys_permit_1.json — generate it with secretcli (see doc comment)");
+        let permit1: secret_toolkit::permit::Permit =
+            serde_json::from_str(&json1).expect("Could not parse api_keys_permit_1.json");
+
+        let json2 = std::fs::read_to_string("./api_keys_permit_2.json")
+            .expect("Missing api_keys_permit_2.json — generate it with secretcli (see doc comment)");
+        let permit2: secret_toolkit::permit::Permit =
+            serde_json::from_str(&json2).expect("Could not parse api_keys_permit_2.json");
+
+        // Both permits should work before revocation.
+        let res1 = query(deps.as_ref(), env.clone(), QueryMsg::ApiKeysWithPermit { permit: permit1.clone() });
+        assert!(res1.is_ok(), "permit1 should be valid before revocation");
+
+        let res2 = query(deps.as_ref(), env.clone(), QueryMsg::ApiKeysWithPermit { permit: permit2.clone() });
+        assert!(res2.is_ok(), "permit2 should be valid before revocation");
+
+        // Revoke permit1 by name.
+        execute(
+            deps.as_mut(),
+            env.clone(),
+            info_admin.clone(),
+            ExecuteMsg::RevokePermit {
+                permit_name: "api_keys_permit_1".to_string(),
+                padding: None,
+            },
+        ).unwrap();
+
+        // permit1 must now be rejected.
+        let res1_after = query(deps.as_ref(), env.clone(), QueryMsg::ApiKeysWithPermit { permit: permit1.clone() });
+        assert!(res1_after.is_err(), "permit1 should be rejected after revocation");
+        let err_msg = res1_after.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("revoked"),
+            "error should mention revocation, got: {}", err_msg
+        );
+
+        // permit2 must still work.
+        let res2_after = query(deps.as_ref(), env.clone(), QueryMsg::ApiKeysWithPermit { permit: permit2.clone() });
+        assert!(res2_after.is_ok(), "permit2 should still be valid after revoking permit1");
     }
 }

@@ -20,6 +20,10 @@ pub enum ExecuteMsg {
         created: Option<u64>,
     },
     RevokeApiKey { api_key: String },
+    RevokePermit {
+        permit_name: String,
+        padding: Option<String>,
+    },
 }
 
 /// Migrate message enum for contract migration

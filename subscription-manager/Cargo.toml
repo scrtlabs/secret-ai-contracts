@@ -41,6 +41,7 @@ cc = { version = "=1.1.10" }
 serde_json = "1.0.134"
 hex = "0.4.3"
 sha2 = "0.9.9"
+base64ct = "=1.6.0"
 
 # Uncomment these for some common extra tools
 # secret-toolkit = { git = "https://github.com/scrtlabs/secret-toolkit", tag = "v0.8.0" }
