@@ -1,12 +1,18 @@
-use cosmwasm_std::{entry_point, from_binary, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult};
+use crate::msg::{
+    ApiKeyDetail, ApiKeyResponse, ApiKeysByIdentityResponse, ExecuteMsg, GetApiKeysResponse,
+    IdentityResponse, InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatusResponse,
+};
+use crate::state::{config, config_read, ApiKey, State, Subscriber, API_KEY_MAP, SB_MAP};
+use cosmwasm_std::{
+    entry_point, from_binary, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response,
+    StdError, StdResult,
+};
 use cosmwasm_storage::Bucket;
 use schemars::JsonSchema;
 use secret_toolkit::permit::{validate, Permit, RevokedPermits};
 use secret_toolkit::storage::Keymap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use crate::msg::{ApiKeyDetail, ApiKeyResponse, ApiKeysByIdentityResponse, ExecuteMsg, GetApiKeysResponse, IdentityResponse, InstantiateMsg, MigrateMsg, QueryMsg, SubscriberStatusResponse};
-use crate::state::{config, config_read, ApiKey, State, Subscriber, API_KEY_MAP, SB_MAP};
 
 /// Generates a pseudo-random API key using env.block.random and the provided identity.
 /// Mimics the following JavaScript function:
@@ -20,7 +26,7 @@ use crate::state::{config, config_read, ApiKey, State, Subscriber, API_KEY_MAP, 
 fn generate_api_key(random: &[u8], identity: &str, created: u64) -> String {
     let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
     let mut key = String::from("sk-"); // prefix as in the JS example
-    // Create an initial seed by hashing the random seed with the identity.
+                                       // Create an initial seed by hashing the random seed with the identity.
     let mut hasher = Sha256::new();
     sha2::Digest::update(&mut hasher, random);
     sha2::Digest::update(&mut hasher, identity.as_bytes());
@@ -66,12 +72,7 @@ pub fn instantiate(
 }
 
 #[entry_point]
-pub fn execute(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    msg: ExecuteMsg,
-) -> StdResult<Response> {
+pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
         ExecuteMsg::RegisterSubscriber { public_key } => {
             try_register_subscriber(deps, info, public_key)
@@ -256,9 +257,8 @@ pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response>
             //     OLD_API_KEY_MAP.remove(deps.storage, old_full_key)?;
             // }
             //
-            Ok(Response::new()
-                .add_attribute("action", "migrate"))
-                // .add_attribute("status", "migrated from OLD_API_KEY_MAP to NEW_API_KEY_MAP"))
+            Ok(Response::new().add_attribute("action", "migrate"))
+            // .add_attribute("status", "migrated from OLD_API_KEY_MAP to NEW_API_KEY_MAP"))
         }
         MigrateMsg::StdError {} => Err(StdError::generic_err("this is an std error")),
     }
@@ -328,9 +328,10 @@ pub fn try_set_admin(
         ));
     }
 
-    let final_address = deps.api.addr_validate(&public_address).map_err(|err| {
-        StdError::generic_err(format!("Invalid address: {}", err))
-    })?;
+    let final_address = deps
+        .api
+        .addr_validate(&public_address)
+        .map_err(|err| StdError::generic_err(format!("Invalid address: {}", err)))?;
 
     state.admin = final_address;
     config.save(&state)?;
@@ -343,20 +344,22 @@ pub fn try_set_admin(
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::SubscriberStatusWithPermit { public_key, permit } => {
-            to_binary(&query_subscriber_with_permit(deps, env, public_key, permit)?)
-        }
+        QueryMsg::SubscriberStatusWithPermit { public_key, permit } => to_binary(
+            &query_subscriber_with_permit(deps, env, public_key, permit)?,
+        ),
         QueryMsg::GetAdmin {} => to_binary(&get_admin(deps)?),
         QueryMsg::ApiKeysWithPermit { permit } => {
             to_binary(&query_api_keys_with_permit(deps, env, permit)?)
-        },
-        QueryMsg::ApiKeysByIdentityWithPermit { identity, permit } => {
-            to_binary(&query_api_keys_by_identity_with_permit(deps, env, identity, permit)?)
-        },
-        QueryMsg::QueryIdentityByApiKey { api_key } =>
-            to_binary(&query_identity_by_api_key(deps, api_key)?),
-        QueryMsg::QueryIdentityByApiKeyHash { api_key_hash } =>
-            to_binary(&query_identity_by_api_key_hash(deps, api_key_hash)?),
+        }
+        QueryMsg::ApiKeysByIdentityWithPermit { identity, permit } => to_binary(
+            &query_api_keys_by_identity_with_permit(deps, env, identity, permit)?,
+        ),
+        QueryMsg::QueryIdentityByApiKey { api_key } => {
+            to_binary(&query_identity_by_api_key(deps, api_key)?)
+        }
+        QueryMsg::QueryIdentityByApiKeyHash { api_key_hash } => {
+            to_binary(&query_identity_by_api_key_hash(deps, api_key_hash)?)
+        }
     }
 }
 
@@ -366,7 +369,9 @@ fn query_identity_by_api_key_hash(deps: Deps, api_key_hash: String) -> StdResult
     for entry in API_KEY_MAP.iter(deps.storage)? {
         let (_key_str, data) = entry?;
         if data.hash == api_key_hash {
-            return Ok(IdentityResponse { identity: data.identity.clone() });
+            return Ok(IdentityResponse {
+                identity: data.identity.clone(),
+            });
         }
     }
     Err(StdError::generic_err("API key hash not found"))
@@ -376,7 +381,11 @@ fn query_identity_by_api_key_hash(deps: Deps, api_key_hash: String) -> StdResult
 fn query_identity_by_api_key(deps: Deps, full_api_key: String) -> StdResult<IdentityResponse> {
     // Derive the storage key (string representation)
     let str_repr = if full_api_key.len() >= 13 {
-        format!("{}...{}", &full_api_key[..10], &full_api_key[full_api_key.len()-3..])
+        format!(
+            "{}...{}",
+            &full_api_key[..10],
+            &full_api_key[full_api_key.len() - 3..]
+        )
     } else {
         full_api_key.clone()
     };
@@ -394,7 +403,9 @@ fn query_identity_by_api_key(deps: Deps, full_api_key: String) -> StdResult<Iden
     if provided_hash != api_key_data.hash {
         return Err(StdError::generic_err("Invalid API key"));
     }
-    Ok(IdentityResponse { identity: api_key_data.identity })
+    Ok(IdentityResponse {
+        identity: api_key_data.identity,
+    })
 }
 
 /// Returns the current admin address.
@@ -484,7 +495,9 @@ fn query_api_keys_with_permit(
         .iter(deps.storage)?
         .filter_map(|result| {
             if let Ok((_key, data)) = result {
-                Some(ApiKeyResponse { hashed_key: data.hash })
+                Some(ApiKeyResponse {
+                    hashed_key: data.hash,
+                })
             } else {
                 None
             }
@@ -547,7 +560,7 @@ mod tests {
     use super::*;
     use cosmwasm_std::testing::*;
     use cosmwasm_std::{
-        attr, from_binary, BlockInfo, Coin, ContractInfo, Timestamp, TransactionInfo, Uint128, Addr,
+        attr, from_binary, Addr, BlockInfo, Coin, ContractInfo, Timestamp, TransactionInfo, Uint128,
     };
 
     /// Mocks an environment for permit tests
@@ -563,7 +576,8 @@ mod tests {
             },
             transaction: Some(TransactionInfo {
                 index: 3,
-                hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+                hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    .to_string(),
             }),
             contract: ContractInfo {
                 address: Addr::unchecked("secret1ttm9axv8hqwjv3qxvxseecppsrw4cd68getrvr"),
@@ -592,7 +606,7 @@ mod tests {
                 created: None,
             },
         )
-            .unwrap();
+        .unwrap();
 
         execute(
             deps.as_mut(),
@@ -604,7 +618,7 @@ mod tests {
                 created: None,
             },
         )
-            .unwrap();
+        .unwrap();
 
         // Ensure two keys are added.
         let keys: Vec<String> = API_KEY_MAP
@@ -633,7 +647,13 @@ mod tests {
         let init_msg = InstantiateMsg {};
         let env = mock_env_for_permit();
 
-        instantiate(deps.as_mut(), env.clone(), info_for_instantiate.clone(), init_msg).unwrap();
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info_for_instantiate.clone(),
+            init_msg,
+        )
+        .unwrap();
 
         let info = mock_info("user1", &[]);
 
@@ -648,7 +668,7 @@ mod tests {
                 created: None,
             },
         )
-            .unwrap();
+        .unwrap();
 
         // Read a permit from file "./api_keys_permit.json".
         let json_data = std::fs::read_to_string("./api_keys_permit.json").unwrap();
@@ -674,7 +694,13 @@ mod tests {
         let init_msg = InstantiateMsg {};
         let env = mock_env_for_permit();
 
-        instantiate(deps.as_mut(), env.clone(), info_for_instantiate.clone(), init_msg).unwrap();
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info_for_instantiate.clone(),
+            init_msg,
+        )
+        .unwrap();
 
         let info = mock_info("user1", &[]);
 
@@ -689,7 +715,7 @@ mod tests {
                 created: None,
             },
         )
-            .unwrap();
+        .unwrap();
 
         // Extract the full API key from the response attributes.
         let full_api_key = add_res
@@ -722,10 +748,10 @@ mod tests {
                 api_key: str_repr.clone(),
             },
         )
-            .unwrap();
+        .unwrap();
 
-        let json_data = std::fs::read_to_string("./api_keys_permit.json")
-            .expect("Failed to read permit.json");
+        let json_data =
+            std::fs::read_to_string("./api_keys_permit.json").expect("Failed to read permit.json");
         let permit: secret_toolkit::permit::Permit =
             serde_json::from_str(&json_data).expect("Could not parse Permit from JSON");
 
@@ -855,10 +881,7 @@ mod tests {
         assert_eq!(0, res.messages.len());
         assert_eq!(
             res.attributes,
-            vec![
-                attr("action", "set_admin"),
-                attr("new_admin", "new_admin")
-            ]
+            vec![attr("action", "set_admin"), attr("new_admin", "new_admin")]
         );
 
         let config = config_read(&deps.storage).load().unwrap();
@@ -1005,7 +1028,7 @@ mod tests {
                 created: Some(1000),
             },
         )
-            .unwrap();
+        .unwrap();
 
         execute(
             deps.as_mut(),
@@ -1017,7 +1040,7 @@ mod tests {
                 created: Some(2000),
             },
         )
-            .unwrap();
+        .unwrap();
 
         execute(
             deps.as_mut(),
@@ -1029,7 +1052,7 @@ mod tests {
                 created: Some(3000),
             },
         )
-            .unwrap();
+        .unwrap();
 
         let json_data = std::fs::read_to_string("./api_keys_by_identity_permit.json")
             .expect("Failed to read permit.json");
@@ -1075,7 +1098,7 @@ mod tests {
                 created: Some(1000),
             },
         )
-            .unwrap();
+        .unwrap();
 
         execute(
             deps.as_mut(),
@@ -1087,7 +1110,7 @@ mod tests {
                 created: Some(2000),
             },
         )
-            .unwrap();
+        .unwrap();
 
         // Query with an empty identity should return an empty result.
         let json_data = std::fs::read_to_string("./api_keys_by_identity_permit.json")
@@ -1116,13 +1139,21 @@ mod tests {
             deps.as_mut(),
             env.clone(),
             info.clone(),
-            ExecuteMsg::AddApiKey { identity: "user1".to_string(), name: None, created: None },
-        ).unwrap();
+            ExecuteMsg::AddApiKey {
+                identity: "user1".to_string(),
+                name: None,
+                created: None,
+            },
+        )
+        .unwrap();
         // Extract full API key
-        let full_key = exec_res.attributes
+        let full_key = exec_res
+            .attributes
             .iter()
-            .find(|a| a.key == "api_key").unwrap()
-            .value.clone();
+            .find(|a| a.key == "api_key")
+            .unwrap()
+            .value
+            .clone();
 
         println!("Full key: {}", full_key);
 
@@ -1130,8 +1161,11 @@ mod tests {
         let bin = query(
             deps.as_ref(),
             env.clone(),
-            QueryMsg::QueryIdentityByApiKey { api_key: full_key.clone() }
-        ).unwrap();
+            QueryMsg::QueryIdentityByApiKey {
+                api_key: full_key.clone(),
+            },
+        )
+        .unwrap();
         let resp: IdentityResponse = from_binary(&bin).unwrap();
         assert_eq!(resp.identity, "user1");
     }
@@ -1146,7 +1180,9 @@ mod tests {
         let res = query(
             deps.as_ref(),
             env.clone(),
-            QueryMsg::QueryIdentityByApiKey { api_key: "sk-invalid-key".to_string() }
+            QueryMsg::QueryIdentityByApiKey {
+                api_key: "sk-invalid-key".to_string(),
+            },
         );
         assert!(res.is_err());
     }
@@ -1161,10 +1197,21 @@ mod tests {
             deps.as_mut(),
             env.clone(),
             info.clone(),
-            ExecuteMsg::AddApiKey { identity: "user_hash".to_string(), name: None, created: None },
-        ).unwrap();
+            ExecuteMsg::AddApiKey {
+                identity: "user_hash".to_string(),
+                name: None,
+                created: None,
+            },
+        )
+        .unwrap();
         // Extract full key
-        let full = res.attributes.iter().find(|a| a.key=="api_key").unwrap().value.clone();
+        let full = res
+            .attributes
+            .iter()
+            .find(|a| a.key == "api_key")
+            .unwrap()
+            .value
+            .clone();
         // Compute hash
         let mut hasher = Sha256::new();
         hasher.update(full.as_bytes());
@@ -1174,8 +1221,11 @@ mod tests {
         let bin = query(
             deps.as_ref(),
             env.clone(),
-            QueryMsg::QueryIdentityByApiKeyHash { api_key_hash: hash.clone() }
-        ).unwrap();
+            QueryMsg::QueryIdentityByApiKeyHash {
+                api_key_hash: hash.clone(),
+            },
+        )
+        .unwrap();
         let resp: IdentityResponse = from_binary(&bin).unwrap();
         assert_eq!(resp.identity, "user_hash");
     }
@@ -1190,7 +1240,9 @@ mod tests {
         let res = query(
             deps.as_ref(),
             env.clone(),
-            QueryMsg::QueryIdentityByApiKeyHash { api_key_hash: "deadbeef".to_string() }
+            QueryMsg::QueryIdentityByApiKeyHash {
+                api_key_hash: "deadbeef".to_string(),
+            },
         );
         assert!(res.is_err());
     }
@@ -1217,7 +1269,13 @@ mod tests {
         let info_admin = mock_info(admin_addr, &[]);
         let env = mock_env_for_permit();
 
-        instantiate(deps.as_mut(), env.clone(), info_admin.clone(), InstantiateMsg {}).unwrap();
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info_admin.clone(),
+            InstantiateMsg {},
+        )
+        .unwrap();
 
         // Add an API key so the response is non-trivially verifiable.
         execute(
@@ -1229,23 +1287,38 @@ mod tests {
                 name: Some("test key".to_string()),
                 created: Some(1),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
-        let json1 = std::fs::read_to_string("./api_keys_permit_1.json")
-            .expect("Missing api_keys_permit_1.json — generate it with secretcli (see doc comment)");
+        let json1 = std::fs::read_to_string("./api_keys_permit_1.json").expect(
+            "Missing api_keys_permit_1.json — generate it with secretcli (see doc comment)",
+        );
         let permit1: secret_toolkit::permit::Permit =
             serde_json::from_str(&json1).expect("Could not parse api_keys_permit_1.json");
 
-        let json2 = std::fs::read_to_string("./api_keys_permit_2.json")
-            .expect("Missing api_keys_permit_2.json — generate it with secretcli (see doc comment)");
+        let json2 = std::fs::read_to_string("./api_keys_permit_2.json").expect(
+            "Missing api_keys_permit_2.json — generate it with secretcli (see doc comment)",
+        );
         let permit2: secret_toolkit::permit::Permit =
             serde_json::from_str(&json2).expect("Could not parse api_keys_permit_2.json");
 
         // Both permits should work before revocation.
-        let res1 = query(deps.as_ref(), env.clone(), QueryMsg::ApiKeysWithPermit { permit: permit1.clone() });
+        let res1 = query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::ApiKeysWithPermit {
+                permit: permit1.clone(),
+            },
+        );
         assert!(res1.is_ok(), "permit1 should be valid before revocation");
 
-        let res2 = query(deps.as_ref(), env.clone(), QueryMsg::ApiKeysWithPermit { permit: permit2.clone() });
+        let res2 = query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::ApiKeysWithPermit {
+                permit: permit2.clone(),
+            },
+        );
         assert!(res2.is_ok(), "permit2 should be valid before revocation");
 
         // Revoke permit1 by name.
@@ -1257,19 +1330,39 @@ mod tests {
                 permit_name: "api_keys_permit_1".to_string(),
                 padding: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // permit1 must now be rejected.
-        let res1_after = query(deps.as_ref(), env.clone(), QueryMsg::ApiKeysWithPermit { permit: permit1.clone() });
-        assert!(res1_after.is_err(), "permit1 should be rejected after revocation");
+        let res1_after = query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::ApiKeysWithPermit {
+                permit: permit1.clone(),
+            },
+        );
+        assert!(
+            res1_after.is_err(),
+            "permit1 should be rejected after revocation"
+        );
         let err_msg = res1_after.unwrap_err().to_string();
         assert!(
             err_msg.contains("revoked"),
-            "error should mention revocation, got: {}", err_msg
+            "error should mention revocation, got: {}",
+            err_msg
         );
 
         // permit2 must still work.
-        let res2_after = query(deps.as_ref(), env.clone(), QueryMsg::ApiKeysWithPermit { permit: permit2.clone() });
-        assert!(res2_after.is_ok(), "permit2 should still be valid after revoking permit1");
+        let res2_after = query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::ApiKeysWithPermit {
+                permit: permit2.clone(),
+            },
+        );
+        assert!(
+            res2_after.is_ok(),
+            "permit2 should still be valid after revoking permit1"
+        );
     }
 }
