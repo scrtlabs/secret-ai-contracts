@@ -246,8 +246,7 @@ fn signature_verification(
 
     let message_hash = Sha256::digest(public_key_bytes.clone());
 
-    deps
-        .api
+    deps.api
         .secp256k1_verify(&message_hash, &signature_bytes, &public_key_bytes)
         .map_err(|e| {
             StdError::generic_err("Failed to verify signature: ".to_string() + &e.to_string())
@@ -324,7 +323,17 @@ fn query_models(
     // }
 
     Ok(GetModelsResponse {
-        models: vec!["deepseek-r1:70b".into(), "llama3.2-vision".into(), "gemma3:4b".into(), "stt-whisper".into(),"tts-kokoro".into(), "solidity-llm".into(), "qwen3:8b".into()],
+        models: vec![
+            "deepseek-r1:70b".into(),
+            "llama3.2-vision:latest".into(),
+            "gemma3:4b".into(),
+            "stt-whisper".into(),
+            "tts-kokoro".into(),
+            "solidity-llm".into(),
+            "qwen3:8b".into(),
+            "qwen2.5:72b".into(),
+            "gpt-oss:120b".into(),
+        ],
     })
 }
 
@@ -341,8 +350,17 @@ fn query_urls(
 
     let urls = match model.as_deref() {
         // LLM models
-        Some("deepseek-r1:70b") | Some("gemma3:4b") | Some("llama3.2-vision") | Some("qwen3:8b") => {
+        Some("deepseek-r1:70b")
+        | Some("gemma3:4b")
+        | Some("llama3.2-vision:latest")
+        | Some("qwen3:8b")
+        | Some("qwen2.5:72b") => {
             vec!["https://secretai-rytn.scrtlabs.com:21434".into()]
+        }
+
+        // GPT-OSS model
+        Some("gpt-oss:120b") => {
+            vec!["https://secretai-jedi.scrtlabs.com:21434".into()]
         }
 
         // Speech-to-text
