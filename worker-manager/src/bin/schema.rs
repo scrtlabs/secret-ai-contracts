@@ -4,7 +4,7 @@ use std::fs::create_dir_all;
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
 use claive_worker_manager::msg::{
-    ExecuteMsg, GetLivelinessChallengeResponse, GetNextWorkerResponse, InstantiateMsg, QueryMsg,
+    ExecuteMsg, GetLivelinessChallengeResponse, GetWorkersResponse, InstantiateMsg, QueryMsg,
 };
 use claive_worker_manager::state::State;
 
@@ -18,6 +18,6 @@ fn main() {
     export_schema(&schema_for!(ExecuteMsg), &out_dir);
     export_schema(&schema_for!(QueryMsg), &out_dir);
     export_schema(&schema_for!(State), &out_dir);
-    export_schema(&schema_for!(GetNextWorkerResponse), &out_dir);
+    export_schema(&schema_for!(GetWorkersResponse), &out_dir);
     export_schema(&schema_for!(GetLivelinessChallengeResponse), &out_dir);
 }

@@ -32,13 +32,13 @@ _build-mainnet:
 .PHONY: build-mainnet-reproducible
 build-mainnet-reproducible:
 	docker run --rm -v "$$(pwd)":/contract \
-		--mount type=volume,source="$$(basename "$$(pwd)")_cache",target=/contract/target \
+		--mount type=volume,source="$$(basename "$$(pwd)")_cache",target=/code/target \
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-		ghcr.io/scrtlabs/localsecret:v1.6.0-rc.3
+		mr7uca/wasm-contract-optimizer:0.0.10
 
 .PHONY: compress-wasm
 compress-wasm:
-	cp ./target/wasm32-unknown-unknown/release/*.wasm ./contract.wasm
+	cp ./target/wasm32-unknown-unknown/release/claive_worker_manager.wasm ./contract.wasm
 	@## The following line is not necessary, may work only on linux (extra size optimization)
 	@# wasm-opt -Os ./contract.wasm -o ./contract.wasm
 	cat ./contract.wasm | gzip -9 > ./contract.wasm.gz
